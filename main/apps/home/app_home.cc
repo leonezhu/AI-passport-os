@@ -62,19 +62,19 @@ namespace {
 constexpr char kTag[] = "app_home";
 
 // 绿磷光配色(整页黑绿单色,参照复古终端锁屏参考图)。
-constexpr uint32_t kBg = UI_BG;          // 屏底近黑绿
-constexpr uint32_t kCardBg = UI_SURFACE;      // 卡片底(比屏底略亮)
-constexpr uint32_t kPhos = UI_TEXT;        // 磷光绿:主文字/点阵/艺术图
-constexpr uint32_t kPhosDim = UI_TEXT_DIM;     // 暗绿:次级文字
-constexpr uint32_t kPhosBorder = UI_BORDER;  // 卡片描边
+#define kBg (UI_BG)          // 屏底近黑绿
+#define kCardBg (UI_SURFACE)      // 卡片底(比屏底略亮)
+#define kPhos (UI_TEXT)        // 磷光绿:主文字/点阵/艺术图
+#define kPhosDim (UI_TEXT_DIM)     // 暗绿:次级文字
+#define kPhosBorder (UI_BORDER)  // 卡片描边
 
 // 兼容既有更新函数的语义色:磷光风格里"强调/在线"都是亮绿,弱化都是暗绿。
-constexpr uint32_t kText = kPhos;
-constexpr uint32_t kSub = kPhosDim;
-constexpr uint32_t kMuted = kPhosDim;
-constexpr uint32_t kAccent = kPhos;
-constexpr uint32_t kOnline = kPhos;
-constexpr uint32_t kOffline = kPhosDim;
+#define kText (kPhos)
+#define kSub (kPhosDim)
+#define kMuted (kPhosDim)
+#define kAccent (kPhos)
+#define kOnline (kPhos)
+#define kOffline (kPhosDim)
 
 // 版式栅格:所有元素都挂在这几个常量上,改一个边距整屏跟着走,不再散落硬编码。
 constexpr int kMargin = 12;
@@ -521,11 +521,13 @@ lv_obj_t *make_panel(lv_obj_t *parent, int x, int y, int w, int h, int radius,
     lv_obj_t *p = lv_obj_create(parent);
     lv_obj_set_pos(p, x, y);
     lv_obj_set_size(p, w, h);
-    lv_obj_set_style_bg_color(p, lv_color_hex(kBg), 0);
+    lv_obj_set_style_bg_color(p, lv_color_hex(ui_theme_is_classic() ? kCardBg : kBg), 0);
     lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(p, 0, 0);
     lv_obj_set_style_border_width(p, 1, 0);
-    lv_obj_set_style_border_side(p, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_side(p, ui_theme_is_classic()
+                                        ? LV_BORDER_SIDE_FULL
+                                        : LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(p, lv_color_hex(kPhosBorder), 0);
     lv_obj_set_style_pad_all(p, 2, 0);
     lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
@@ -982,7 +984,7 @@ const passport_app_t g_home_app = {
     .en_name = "HOME",
     .desc = "时钟 · 天气 · 名片 · 上传",
     .tag = "Wi-Fi",
-    .theme_color = UI_ORANGE,
+    .theme_color = 0xDDB36C,
     .init = home_init,
     .start = home_start,
     .stop = home_stop,

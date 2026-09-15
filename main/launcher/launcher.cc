@@ -20,11 +20,11 @@ constexpr size_t kMaxApps = 8;
 constexpr size_t kIconParts = 10;
 
 // 旅行仪器配色:与首页(app_home.cc)完全同源,风格统一。
-constexpr uint32_t kBg = UI_BG;          // 屏底炭黑
-constexpr uint32_t kCardBg = UI_SURFACE;      // 卡片底
-constexpr uint32_t kPhos = UI_ACCENT;        // 琥珀:图标/标题/选中态
-constexpr uint32_t kPhosDim = UI_TEXT_DIM;     // 灰米色:副标题/未选中
-constexpr uint32_t kPhosBorder = UI_BORDER;  // 卡片/底板描边
+#define kBg (UI_BG)          // 屏底炭黑
+#define kCardBg (UI_SURFACE)      // 卡片底
+#define kPhos (UI_ACCENT)        // 琥珀:图标/标题/选中态
+#define kPhosDim (UI_TEXT_DIM)     // 灰米色:副标题/未选中
+#define kPhosBorder (UI_BORDER)  // 卡片/底板描边
 
 lv_obj_t *s_screen;
 lv_obj_t *s_card;
@@ -250,9 +250,12 @@ void launcher_ui_init(void) {
                                         &lv_font_montserrat_14);
 
     // ---- 应用卡:炭灰面板 + 细描边(与首页卡片同语言,无硬阴影) ----
-    s_card = block(s_screen, 20, 44, 200, 208, kBg);
+    s_card = block(s_screen, 20, 44, 200, 208,
+                   ui_theme_is_classic() ? kCardBg : kBg);
     lv_obj_set_style_border_width(s_card, 1, 0);
-    lv_obj_set_style_border_side(s_card, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_side(s_card, ui_theme_is_classic()
+                                             ? LV_BORDER_SIDE_FULL
+                                             : LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(s_card, lv_color_hex(kPhosBorder), 0);
 
     lv_obj_t *catalogue = ui_pixel_label(s_screen, "PASSPORT / TOOLS", &lv_font_montserrat_14, UI_TEXT_DIM);
@@ -260,7 +263,7 @@ void launcher_ui_init(void) {
 
     // ---- 图标底板:近黑内凹框,磷光单色图标压在上面 ----
     s_icon_plate = block(s_card, 54, 14, 92, 92, kBg);
-    lv_obj_set_style_border_width(s_icon_plate, 0, 0);
+    lv_obj_set_style_border_width(s_icon_plate, ui_theme_is_classic() ? 1 : 0, 0);
     lv_obj_set_style_border_color(s_icon_plate, lv_color_hex(kPhosBorder), 0);
 
     s_icon = lv_obj_create(s_card);
@@ -281,7 +284,7 @@ void launcher_ui_init(void) {
 
     // ---- 英文副标题:细框铭牌(灰米色描边 + 琥珀文字) ----
     s_chip = block(s_card, 8, 150, 184, 22, kBg);
-    lv_obj_set_style_border_width(s_chip, 0, 0);
+    lv_obj_set_style_border_width(s_chip, ui_theme_is_classic() ? 1 : 0, 0);
     lv_obj_set_style_border_color(s_chip, lv_color_hex(kPhosBorder), 0);
     s_app_subtitle = lv_label_create(s_chip);
     lv_obj_set_style_text_font(s_app_subtitle, &lv_font_montserrat_14, 0);

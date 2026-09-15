@@ -107,15 +107,15 @@ constexpr char kHintReady[] = "汪一声起飞";
 // ---------------------------------------------------------------------------
 // 配色(沿用整机像素风色板)
 // ---------------------------------------------------------------------------
-constexpr uint32_t kInk = UI_INK;
-constexpr uint32_t kPaper = UI_PAPER;
+#define kInk (UI_INK)
+#define kPaper (UI_PAPER)
 constexpr uint32_t kDogBody = 0xE6A13B;  // 柴犬金黄毛色
 constexpr uint32_t kDogEar = 0xAA6518;   // 褐色耳朵
 constexpr uint32_t kDogWhite = 0xFFF3D6; // 脸颊浅白
 constexpr uint32_t kMouthBg = 0x551111;  // 深暗红嘴腔
 constexpr uint32_t kTongue = 0xFF6B8B;   // 粉舌头
-constexpr uint32_t kGrass = UI_ACCENT;    // 管道主体
-constexpr uint32_t kGrassD = UI_BORDER;   // 管道口/描边
+#define kGrass (UI_ACCENT)    // 管道主体
+#define kGrassD (UI_BORDER)   // 管道口/描边
 
 // ---------------------------------------------------------------------------
 // 文本缓存 —— 本次优化的核心
@@ -281,7 +281,9 @@ void build_dead_panel(lv_obj_t *parent) {
     lv_obj_t *panel = px_block(parent, 25, kPanelHiddenY, 190, 122, kPaper, 0);
     s_dead_panel = panel;
     lv_obj_set_style_border_width(panel, 1, 0);
-    lv_obj_set_style_border_side(panel, static_cast<lv_border_side_t>(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
+    lv_obj_set_style_border_side(panel, ui_theme_is_classic()
+        ? LV_BORDER_SIDE_FULL
+        : static_cast<lv_border_side_t>(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
     lv_obj_set_style_border_color(panel, lv_color_hex(UI_BORDER), 0);
 
     lv_obj_t *title = px_label(panel, "你在狗叫什么！", &buddy_font_16, UI_DANGER,

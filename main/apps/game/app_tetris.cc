@@ -43,8 +43,8 @@ int s_panel_x;                /* 右侧信息列起点,随格子尺寸联动 */
 constexpr uint32_t kTickMs = 50;
 
 /* 方块配色(与整机调色板同源);下标 = tc_board 值 */
-constexpr uint32_t kPieceColors[TC_PIECE_KINDS + 1] = {
-    UI_SURFACE_ALT, /* 0 空格子底色(深暗岩灰,无眩光,与纯黑网格线形成高对比) */
+static uint32_t kPieceColors[TC_PIECE_KINDS + 1] = {
+    0, /* 0 空格子底色(深暗岩灰,无眩光,与纯黑网格线形成高对比) */
     0x1689E8, /* 1 I 天蓝 */
     0xFFD928, /* 2 O 黄 */
     0x7557D9, /* 3 T 紫 */
@@ -116,7 +116,11 @@ lv_obj_t *mk_label(lv_obj_t *parent, const char *text, const lv_font_t *font,
 }
 
 void ensure_styles() {
-    if (s_styles_ready) return;
+    kPieceColors[0] = UI_SURFACE_ALT;
+    if (s_styles_ready) {
+        lv_style_set_bg_color(&s_cell_styles[0], lv_color_hex(kPieceColors[0]));
+        return;
+    }
     for (int i = 0; i <= TC_PIECE_KINDS; ++i) {
         lv_style_init(&s_cell_styles[i]);
         lv_style_set_radius(&s_cell_styles[i], 0);
@@ -309,7 +313,9 @@ void build_oom_page() {
     s_dead_panel = block(s_screen, 24, 104, 192, 112, UI_PAPER);
     if (!s_dead_panel) return;
     lv_obj_set_style_border_width(s_dead_panel, 1, 0);
-    lv_obj_set_style_border_side(s_dead_panel, static_cast<lv_border_side_t>(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
+    lv_obj_set_style_border_side(s_dead_panel, ui_theme_is_classic()
+        ? LV_BORDER_SIDE_FULL
+        : static_cast<lv_border_side_t>(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
     lv_obj_set_style_border_color(s_dead_panel, lv_color_hex(UI_BORDER), 0);
     s_dead_info = mk_label(s_dead_panel, "内存不足", &buddy_font_16, UI_TEXT,
                            LV_TEXT_ALIGN_CENTER);
@@ -400,7 +406,9 @@ void build_ui() {
 
     s_dead_panel = block(s_screen, 24, 344, 192, 112, UI_PAPER);
     lv_obj_set_style_border_width(s_dead_panel, 1, 0);
-    lv_obj_set_style_border_side(s_dead_panel, static_cast<lv_border_side_t>(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
+    lv_obj_set_style_border_side(s_dead_panel, ui_theme_is_classic()
+        ? LV_BORDER_SIDE_FULL
+        : static_cast<lv_border_side_t>(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
     lv_obj_set_style_border_color(s_dead_panel, lv_color_hex(UI_BORDER), 0);
     lv_obj_t *t = mk_label(s_dead_panel, "游戏结束", &buddy_font_16, UI_TEXT, LV_TEXT_ALIGN_CENTER);
     lv_obj_set_width(t, 186);
@@ -528,7 +536,7 @@ const passport_app_t g_tetris_app = {
     .en_name = "TETRIS",
     .desc = "经典像素方块 · 上左移 下右移 · OK 旋转",
     .tag = "GAME",
-    .theme_color = UI_SKY,
+    .theme_color = 0x181B1C,
     .init = tetris_init,
     .start = tetris_start,
     .stop = tetris_stop,

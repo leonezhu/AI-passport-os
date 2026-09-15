@@ -3,6 +3,38 @@
 
 #include <stdio.h>
 
+static ui_theme_t s_ui_theme = UI_THEME_TRAVEL;
+
+/* Two palettes share every font, image and screen layout. This costs 80 bytes
+ * of read-only colour data and one byte of live state, not a second UI tree. */
+static const uint32_t s_palettes[UI_THEME_COUNT][UI_COLOR_COUNT] = {
+    [UI_THEME_CLASSIC] = {
+        0x03120B, 0x091E14, 0x122E20, 0x37694B, 0xA8EDBB,
+        0x80AF90, 0x8CF5A6, 0xFF9585, 0x03120B, 0x8CF5A6,
+    },
+    [UI_THEME_TRAVEL] = {
+        0x181B1C, 0x202526, 0x303738, 0x59605D, 0xEEE7D6,
+        0xB3B2A5, 0xDDB36C, 0xF09B87, 0x181B1C, 0x9DB89A,
+    },
+};
+
+void ui_theme_set(ui_theme_t theme)
+{
+    s_ui_theme = theme < UI_THEME_COUNT ? theme : UI_THEME_TRAVEL;
+}
+
+ui_theme_t ui_theme_get(void) { return s_ui_theme; }
+bool ui_theme_is_classic(void) { return s_ui_theme == UI_THEME_CLASSIC; }
+uint32_t ui_theme_color(ui_color_role_t role)
+{
+    if (role >= UI_COLOR_COUNT) role = UI_COLOR_TEXT;
+    return s_palettes[s_ui_theme][role];
+}
+const char *ui_theme_name(ui_theme_t theme)
+{
+    return theme == UI_THEME_CLASSIC ? "经典绿" : "旅行仪器";
+}
+
 static void start_blink(lv_obj_t *eye);
 
 static lv_obj_t *block(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color)
@@ -77,7 +109,7 @@ lv_obj_t *ui_pixel_panel_create(lv_obj_t *parent, int x, int y, int w, int h,
 {
     lv_obj_t *panel = block(parent, x, y, w, h, color);
     lv_obj_set_style_border_color(panel, lv_color_hex(UI_BORDER), 0);
-    lv_obj_set_style_border_width(panel, 0, 0);
+    lv_obj_set_style_border_width(panel, ui_theme_is_classic() ? 1 : 0, 0);
     lv_obj_set_style_pad_all(panel, 7, 0);
     return panel;
 }
@@ -167,9 +199,11 @@ void ui_pixel_set_selected(lv_obj_t *panel, bool selected, bool enabled)
 lv_obj_t *ui_pixel_title_plate(lv_obj_t *parent, int y, const char *text,
                                const lv_font_t *font)
 {
-    lv_obj_t *plate = block(parent, 0, y, 216, 36, UI_BG);
+    lv_obj_t *plate = block(parent, 0, y, 216, 36,
+                            ui_theme_is_classic() ? UI_SURFACE : UI_BG);
     lv_obj_set_style_border_width(plate, 1, 0);
-    lv_obj_set_style_border_side(plate, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_side(plate, ui_theme_is_classic() ? LV_BORDER_SIDE_FULL
+                                                               : LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(plate, lv_color_hex(UI_BORDER), 0);
     lv_obj_t *t = ui_pixel_label_ls(plate, text, font, UI_TEXT, UI_LS_TITLE);
     const int w = 216;

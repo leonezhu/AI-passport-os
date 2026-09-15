@@ -29,16 +29,16 @@ namespace {
 
 // 2026-09-13 深夜:应用户要求换回"夜间座舱"深色主题(天空蓝+纸面板观感杂乱)。
 // 全部颜色走下面常量,换主题只动这里;琥珀强调是收音机的"电台橙"。
-constexpr uint32_t kBackground = UI_BG;   // 深夜蓝黑底
-constexpr uint32_t kPanel = UI_SURFACE;        // 面板
-constexpr uint32_t kPanelSoft = UI_SURFACE_ALT;    // 次级面板(电平条/音量条底)
-constexpr uint32_t kGrid = UI_BORDER;         // 刻度/描边
-constexpr uint32_t kText = UI_TEXT;         // 主文字(冷白)
-constexpr uint32_t kMuted = UI_TEXT_DIM;        // 次级文字
-constexpr uint32_t kAmber = UI_AMBER;        // 琥珀强调(指针/频率/CH 号)
-constexpr uint32_t kAmberSoft = UI_SURFACE_ALT;    // 亮琥珀(选中)
-constexpr uint32_t kGreen = UI_GRASS;
-constexpr uint32_t kRed = UI_RED;
+#define kBackground (UI_BG)   // 深夜蓝黑底
+#define kPanel (UI_SURFACE)        // 面板
+#define kPanelSoft (UI_SURFACE_ALT)    // 次级面板(电平条/音量条底)
+#define kGrid (UI_BORDER)         // 刻度/描边
+#define kText (UI_TEXT)         // 主文字(冷白)
+#define kMuted (UI_TEXT_DIM)        // 次级文字
+#define kAmber (UI_AMBER)        // 琥珀强调(指针/频率/CH 号)
+#define kAmberSoft (UI_SURFACE_ALT)    // 亮琥珀(选中)
+#define kGreen (UI_GRASS)
+#define kRed (UI_RED)
 
 // Dial geometry. The scale spans 88-108 MHz, the band used by Chinese FM
 // broadcasting, so a real frequency maps onto it directly.
@@ -282,7 +282,7 @@ lv_obj_t *make_box(lv_obj_t *parent, int x, int y, int width, int height,
     (void)radius;
     lv_obj_set_style_radius(object, 0, 0);
     if (color == UI_SURFACE || color == UI_SURFACE_ALT) {
-        lv_obj_set_style_border_width(object, 0, 0);
+        lv_obj_set_style_border_width(object, ui_theme_is_classic() ? 1 : 0, 0);
         lv_obj_set_style_border_color(object, lv_color_hex(UI_BORDER), 0);
     }
     // Radio 主界面对象较多；在单核 ESP32-C3 上分批让出 CPU，避免一次完整
@@ -502,7 +502,9 @@ void build_main() {
     lv_obj_t *dial = make_box(s_main_group, 13, 135, 214, 69, kPanel, 8);
     lv_obj_set_style_border_color(dial, lv_color_hex(kGrid), 0);
     lv_obj_set_style_border_width(dial, 1, 0);
-    lv_obj_set_style_border_side(dial, static_cast<lv_border_side_t>(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
+    lv_obj_set_style_border_side(dial, ui_theme_is_classic()
+        ? LV_BORDER_SIDE_FULL
+        : static_cast<lv_border_side_t>(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
 
     // Tick marks every 0.5 MHz across the 88-108 band, with taller marks and a
     // printed number on each whole 4 MHz step.

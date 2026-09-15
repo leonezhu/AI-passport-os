@@ -21,11 +21,12 @@ constexpr char kNvsNamespace[] = "system_prefs";
 constexpr uint8_t kVolumes[] = {0, 20, 40, 60, 80, 100};
 constexpr uint8_t kBrightness[] = {20, 40, 60, 80, 100};
 constexpr uint16_t kTimeouts[] = {0, 15, 30, 60, 120, 300};
-constexpr size_t kRowCount = 4;
+constexpr size_t kRowCount = 5;
 
 uint8_t s_volume = 80;
 uint8_t s_brightness = 80;
 uint16_t s_timeout = 60;
+ui_theme_t s_theme = UI_THEME_TRAVEL;
 size_t s_selected = 0;
 lv_obj_t *s_screen;
 lv_obj_t *s_rows[kRowCount];
@@ -53,6 +54,7 @@ void save_all() {
     esp_err_t result = nvs_set_u8(handle, "volume", s_volume);
     if (result == ESP_OK) result = nvs_set_u8(handle, "brightness", s_brightness);
     if (result == ESP_OK) result = nvs_set_u16(handle, "timeout", s_timeout);
+    if (result == ESP_OK) result = nvs_set_u8(handle, "theme", static_cast<uint8_t>(s_theme));
     if (result == ESP_OK) result = nvs_commit(handle);
     nvs_close(handle);
     if (result != ESP_OK) ESP_LOGW(kTag, "Failed to save settings: %s", esp_err_to_name(result));
@@ -62,6 +64,7 @@ void apply_settings() {
     bsp_audio_set_master_volume(s_volume);
     bsp_display_set_master_brightness(s_brightness);
     app_registry_set_screen_timeout(s_timeout);
+    ui_theme_set(s_theme);
 }
 
 void refresh_ui() {
@@ -87,7 +90,8 @@ void refresh_ui() {
         std::snprintf(value, sizeof(value), "%u 秒", static_cast<unsigned>(s_timeout));
         lv_label_set_text(s_values[2], value);
     }
-    lv_label_set_text(s_values[3], "确定");
+    lv_label_set_text(s_values[3], ui_theme_name(s_theme));
+    lv_label_set_text(s_values[4], "确定");
 }
 
 void create_ui() {
@@ -98,18 +102,20 @@ void create_ui() {
     ui_pixel_title_plate(s_screen, 30, "设置", &ui_font_20);
 
     static const char *labels[kRowCount] = {
-        "音量", "屏幕亮度", "熄屏", "重新设置"
+        "音量", "屏幕亮度", "熄屏", "外观主题", "重新设置"
     };
     for (size_t i = 0; i < kRowCount; ++i) {
-        const int y = 84 + static_cast<int>(i) * 46;
+        const int y = 72 + static_cast<int>(i) * 39;
         s_rows[i] = lv_obj_create(s_screen);
-        lv_obj_set_size(s_rows[i], 200, 38);
+        lv_obj_set_size(s_rows[i], 200, 33);
         lv_obj_set_pos(s_rows[i], 20, y);
         lv_obj_set_style_radius(s_rows[i], 0, 0);
         lv_obj_set_style_bg_color(s_rows[i], lv_color_hex(UI_PAPER), 0);
         lv_obj_set_style_bg_opa(s_rows[i], LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(s_rows[i], 2, 0);
-        lv_obj_set_style_border_side(s_rows[i], LV_BORDER_SIDE_LEFT, 0);
+        lv_obj_set_style_border_width(s_rows[i], ui_theme_is_classic() ? 1 : 2, 0);
+        lv_obj_set_style_border_side(s_rows[i], ui_theme_is_classic()
+                                                       ? LV_BORDER_SIDE_FULL
+                                                       : LV_BORDER_SIDE_LEFT, 0);
         lv_obj_set_style_border_color(s_rows[i], lv_color_hex(UI_BORDER), 0);
         lv_obj_set_style_pad_hor(s_rows[i], 12, 0);
         lv_obj_set_style_pad_ver(s_rows[i], 0, 0);
@@ -164,9 +170,13 @@ void settings_on_key(uint8_t btn, app_btn_event_t event, uint16_t) {
             case 1: s_brightness = next_value(kBrightness, s_brightness); break;
             case 2: s_timeout = next_value(kTimeouts, s_timeout); break;
             case 3:
+                s_theme = s_theme == UI_THEME_CLASSIC ? UI_THEME_TRAVEL : UI_THEME_CLASSIC;
+                break;
+            case 4:
                 s_volume = 80;
                 s_brightness = 80;
                 s_timeout = 60;
+                s_theme = UI_THEME_TRAVEL;
                 break;
         }
         apply_settings();
@@ -176,7 +186,18 @@ void settings_on_key(uint8_t btn, app_btn_event_t event, uint16_t) {
     }
 
     bsp_lvgl_lock(-1);
-    refresh_ui();
+    if (s_selected == 3 || s_selected == 4) {
+        lv_obj_delete(s_screen);
+        s_screen = nullptr;
+        for (size_t i = 0; i < kRowCount; ++i) {
+            s_rows[i] = nullptr;
+            s_values[i] = nullptr;
+        }
+        create_ui();
+        lv_scr_load(s_screen);
+    } else {
+        refresh_ui();
+    }
     bsp_lvgl_unlock();
 }
 
@@ -188,15 +209,20 @@ void settings_bootstrap(void) {
         nvs_get_u8(handle, "volume", &s_volume);
         nvs_get_u8(handle, "brightness", &s_brightness);
         nvs_get_u16(handle, "timeout", &s_timeout);
+        uint8_t theme = static_cast<uint8_t>(UI_THEME_TRAVEL);
+        if (nvs_get_u8(handle, "theme", &theme) == ESP_OK && theme < UI_THEME_COUNT) {
+            s_theme = static_cast<ui_theme_t>(theme);
+        }
         nvs_close(handle);
     }
     s_volume = validated(kVolumes, s_volume, static_cast<uint8_t>(80));
     s_brightness = validated(kBrightness, s_brightness, static_cast<uint8_t>(80));
     s_timeout = validated(kTimeouts, s_timeout, static_cast<uint16_t>(60));
+    ui_theme_set(s_theme);
     apply_settings();
-    ESP_LOGI(kTag, "Loaded volume=%u brightness=%u timeout=%u",
+    ESP_LOGI(kTag, "Loaded volume=%u brightness=%u timeout=%u theme=%s",
              static_cast<unsigned>(s_volume), static_cast<unsigned>(s_brightness),
-             static_cast<unsigned>(s_timeout));
+             static_cast<unsigned>(s_timeout), ui_theme_name(s_theme));
 }
 
 const passport_app_t g_settings_app = {
@@ -205,7 +231,7 @@ const passport_app_t g_settings_app = {
     .en_name = "SETTINGS",
     .desc = "System controls",
     .tag = "DEVICE",
-    .theme_color = UI_INK,
+    .theme_color = 0x181B1C,
     .init = settings_init,
     .start = settings_start,
     .stop = settings_stop,

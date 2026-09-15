@@ -14,12 +14,12 @@ namespace xiaozhi {
 namespace {
 
 // 状态点颜色:与整机状态色语义一致(墨/纸/草/黄/红/天蓝)
-constexpr uint32_t kTextMain   = UI_TEXT;
-constexpr uint32_t kTextMuted  = UI_SUB;
-constexpr uint32_t kUserBlue   = UI_SKY_DARK;
-constexpr uint32_t kGreenAccent = UI_GRASS_DARK;
-constexpr uint32_t kAmberAccent = UI_ORANGE;
-constexpr uint32_t kRedAccent   = UI_RED;
+#define kTextMain (UI_TEXT)
+#define kTextMuted (UI_SUB)
+#define kUserBlue (UI_SKY_DARK)
+#define kGreenAccent (UI_GRASS_DARK)
+#define kAmberAccent (UI_ORANGE)
+#define kRedAccent (UI_RED)
 
 lv_obj_t *s_screen = nullptr;
 lv_obj_t *s_status_badge = nullptr;
@@ -84,7 +84,7 @@ void ui_init() {
     lv_obj_set_style_bg_color(top_bar, lv_color_hex(UI_BG), 0);
     lv_obj_set_style_bg_opa(top_bar, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(top_bar, 0, 0);
-    lv_obj_set_style_border_width(top_bar, 0, 0);
+    lv_obj_set_style_border_width(top_bar, ui_theme_is_classic() ? 1 : 0, 0);
     lv_obj_set_style_border_color(top_bar, lv_color_hex(UI_BORDER), 0);
     lv_obj_set_style_pad_hor(top_bar, 10, 0);
     lv_obj_set_style_pad_ver(top_bar, 0, 0);
@@ -113,7 +113,9 @@ void ui_init() {
     lv_obj_set_style_bg_opa(s_msg_container, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_msg_container, 0, 0);
     lv_obj_set_style_border_width(s_msg_container, 1, 0);
-    lv_obj_set_style_border_side(s_msg_container, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_set_style_border_side(s_msg_container, ui_theme_is_classic()
+                                                      ? LV_BORDER_SIDE_FULL
+                                                      : LV_BORDER_SIDE_TOP, 0);
     lv_obj_set_style_border_color(s_msg_container, lv_color_hex(UI_BORDER), 0);
     lv_obj_set_style_pad_all(s_msg_container, 8, 0);
     lv_obj_set_style_pad_row(s_msg_container, 12, 0);

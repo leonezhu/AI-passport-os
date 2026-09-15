@@ -83,7 +83,12 @@ static int s_last_link_up = -1;
 static int s_last_risk = -1;
 static char s_last_chip[16];
 
-static const uint32_t RISK_COLORS[APP_RISK_COUNT] = { UI_GRASS, UI_YELLOW, UI_RED };
+static uint32_t risk_color(app_risk_t risk)
+{
+    if (risk == APP_RISK_LOW) return UI_GRASS;
+    if (risk == APP_RISK_MEDIUM) return UI_YELLOW;
+    return UI_RED;
+}
 
 // ---- 基础纯方角块(零圆角像素构件) ----
 static lv_obj_t *block(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color)
@@ -655,7 +660,7 @@ void app_ui_render(const app_ui_snapshot_t *snap)
         if ((int)r != s_last_risk) {
             s_last_risk = (int)r;
             lv_obj_set_style_bg_color(s_pages[APP_ST_APPROVAL].ap_risk_banner,
-                                      lv_color_hex(RISK_COLORS[r]), 0);
+                                      lv_color_hex(risk_color((app_risk_t)r)), 0);
             lv_obj_set_style_text_color(s_pages[APP_ST_APPROVAL].ap_risk_label,
                                         lv_color_hex(UI_ON_ACCENT), 0);
             label_set_if_changed(s_pages[APP_ST_APPROVAL].ap_risk_label, T_RISK[r]);
