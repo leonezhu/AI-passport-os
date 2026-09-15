@@ -281,7 +281,7 @@ void build_dead_panel(lv_obj_t *parent) {
     lv_obj_t *panel = px_block(parent, 25, kPanelHiddenY, 190, 122, kPaper, 0);
     s_dead_panel = panel;
     lv_obj_set_style_border_width(panel, 1, 0);
-    lv_obj_set_style_border_side(panel, LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_side(panel, static_cast<lv_border_side_t>(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
     lv_obj_set_style_border_color(panel, lv_color_hex(UI_BORDER), 0);
 
     lv_obj_t *title = px_label(panel, "你在狗叫什么！", &buddy_font_16, UI_DANGER,

@@ -502,7 +502,7 @@ void build_main() {
     lv_obj_t *dial = make_box(s_main_group, 13, 135, 214, 69, kPanel, 8);
     lv_obj_set_style_border_color(dial, lv_color_hex(kGrid), 0);
     lv_obj_set_style_border_width(dial, 1, 0);
-    lv_obj_set_style_border_side(dial, LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_side(dial, static_cast<lv_border_side_t>(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
 
     // Tick marks every 0.5 MHz across the 88-108 band, with taller marks and a
     // printed number on each whole 4 MHz step.
