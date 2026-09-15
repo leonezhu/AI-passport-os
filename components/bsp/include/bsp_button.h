@@ -4,6 +4,10 @@
 
 #include "esp_err.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // 按键索引。数量用 bsp_pins.h 的 BSP_BTN_COUNT(硬件属性,归引脚表管),
 // 这里不再定义尾项计数,避免出现 BSP_BTN_COUNT / BSP_BTN_COUNT_ 两个近似名字。
 typedef enum {
@@ -35,3 +39,7 @@ int bsp_button_read_mv(void);
 // 刷新期 SPI 活动与 ADC1_CH0 耦合,ADC 持续读 ~0mV → UP 假按 → 假 PTT
 // (真机取证 2026-08-28)。窗口内按键判定直接返回"未按下"。
 void bsp_button_suppress_panel_glitch(void);
+
+#ifdef __cplusplus
+}
+#endif

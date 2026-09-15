@@ -21,7 +21,7 @@ typedef enum {
     APP_ST_HOME = 0,        // 待机主页
     APP_ST_READY,           // 工作流就绪(可 PTT)
     APP_ST_LISTENING,       // 录音中(PTT 按住)
-    APP_ST_TRANSCRIBING,    // 等待 Mac 转写
+    APP_ST_TRANSCRIBING,    // 兼容名:语音完成，等待 DOWN=Enter 发送
     APP_ST_AGENT_RUNNING,   // Agent 执行中
     APP_ST_APPROVAL,        // 待物理审批
     APP_ST_COUNT,
@@ -61,9 +61,11 @@ typedef enum {
     APP_EV_TRANSCRIPT,
     APP_EV_AUDIO_DROP_START,
     APP_EV_AUDIO_DROP_END,
-    APP_EV_BLE_CONNECTED,   // 链路通:EVENT 特征已被订阅(PTT 可用的充分条件)
-    APP_EV_BLE_DISCONNECTED,// 链路断(连接断开或 EVENT 订阅取消)
-    APP_EV_BLE_DROP,        // BLE 事件行因断连/未订阅被丢弃(UI toast 反馈)
+    // 2026-09-13 重命名(D2):通道已从 BLE 迁到 Wi-Fi UDP,但事件名还叫 BLE,
+    // 读代码的人会以为还在走蓝牙。改为 LINK_* 表示"链路",与通道无关。
+    APP_EV_LINK_UP,         // 链路通:对端已就绪(PTT 可用的充分条件)
+    APP_EV_LINK_DOWN,       // 链路断(连接断开或对端失联)
+    APP_EV_LINK_DROP,       // 事件行因断连/未就绪被丢弃(UI toast 反馈)
     APP_EV_AUDIO_ERROR,     // 采集硬件错误
     APP_EV_TONE_DONE,       // START 提示音播放完成(异步开流的信号,见 design)
     APP_EV_TICK,            // 100ms 心跳,驱动超时/息屏

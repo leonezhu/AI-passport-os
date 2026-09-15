@@ -17,6 +17,8 @@ static i2s_chan_handle_t      s_tx, s_rx;
 static uint32_t s_hz;
 static uint8_t  s_bits, s_ch;
 static bool     s_opened;
+static uint8_t  s_requested_volume = 100;
+static uint8_t  s_master_volume = 80;
 
 static esp_err_t i2s_full_duplex_init(void) {
     i2s_chan_config_t chan = {
@@ -104,7 +106,7 @@ esp_err_t bsp_audio_init(void) {
         .pa_reverted = false,
         .master_mode = false,          // MCU I2S 为 master,codec 为 slave
         .use_mclk    = true,
-        .hw_gain     = { .pa_voltage = 5.0f, .codec_dac_voltage = 3.3f },
+        .hw_gain     = { .pa_voltage = 3.3f, .codec_dac_voltage = 3.3f },
         // ⚠ 单声道纯麦克风录音必须为 true。false 会让驱动写 REG44=0x58 进入
         //   ADCL+DACR 参考模式,单声道读到的那一路是 DAC 参考 → 【录音恒为 0】。
         .no_dac_ref  = true,
@@ -118,8 +120,49 @@ esp_err_t bsp_audio_init(void) {
     });
     if (!s_dev) { ESP_LOGE(TAG, "esp_codec_dev_new 失败"); return ESP_FAIL; }
 
-    ESP_LOGI(TAG, "ES8311 就绪");
+    // 注入微型扬声器专用音量曲线:
+    // 默认音量曲线上限仅 0.0dB(面向外接大音箱)。ES8311 芯片最大增益支持到 +32dB,
+    // 这里将 100% 音量上限开放到 +18dB,为板载 0.5W~1W 扬声器提供充沛驱动力。
+    static const esp_codec_dev_vol_map_t s_vol_map[] = {
+        { .vol = 0,   .db_value = -95.5f },
+        { .vol = 15,  .db_value = -35.0f },
+        { .vol = 35,  .db_value = -18.0f },
+        { .vol = 55,  .db_value = -5.0f },
+        { .vol = 75,  .db_value = 5.0f },
+        { .vol = 90,  .db_value = 12.0f },
+        { .vol = 100, .db_value = 18.0f },
+    };
+    esp_codec_dev_vol_curve_t curve = {
+        .vol_map = (esp_codec_dev_vol_map_t *)s_vol_map,
+        .count = sizeof(s_vol_map) / sizeof(s_vol_map[0]),
+    };
+    esp_codec_dev_set_vol_curve(s_dev, &curve);
+
+    ESP_LOGI(TAG, "ES8311 就绪(定制扬声器增益曲线 0~+18dB)");
     return ESP_OK;
+}
+
+void bsp_audio_deinit(void) {
+    if (s_opened) {
+        esp_codec_dev_close(s_dev);
+        s_opened = false;
+    }
+    if (s_dev) {
+        esp_codec_dev_delete(s_dev);
+        s_dev = NULL;
+    }
+    // I2S 通道随 dev 一起拆;控制口/数据口的 codec_if 结构是几百字节的一次性
+    // 开机开销(本函数每开机只走一次),不追缴,避免依赖各 delete 接口的细节。
+    if (s_tx) {
+        i2s_del_channel(s_tx);
+        s_tx = NULL;
+    }
+    if (s_rx) {
+        i2s_del_channel(s_rx);
+        s_rx = NULL;
+    }
+    s_hz = 0; s_bits = 0; s_ch = 0;
+    ESP_LOGI(TAG, "audio deinit, heap returned");
 }
 
 esp_err_t bsp_audio_set_format(uint32_t hz, uint8_t bits, uint8_t ch) {
@@ -147,11 +190,20 @@ esp_err_t bsp_audio_set_format(uint32_t hz, uint8_t bits, uint8_t ch) {
 
     // ⚠ open 之后【不要】手动覆写 ES8311 的时钟分频寄存器(REG01~06):
     //   驱动已按采样率与 MCLK 精确算好,覆写会导致 ADC/DAC 时序错乱、录音回放全是杂音。
-    //   这里只设麦克风模拟 PGA 增益。
+    //   这里只恢复麦克风模拟 PGA 增益和逻辑音量。close/open 会重置 codec 的输出
+    //   状态；若不恢复，16kHz 录音切到 24kHz TTS 后可能保持静音。
     esp_codec_dev_set_in_gain(s_dev, 30.0f);
+    const uint8_t actual_volume =
+        (uint8_t)(((uint16_t)s_requested_volume * s_master_volume) / 100U);
+    if (esp_codec_dev_set_out_vol(s_dev, actual_volume) != 0) {
+        ESP_LOGE(TAG, "恢复输出音量失败: %u%%", actual_volume);
+        esp_codec_dev_close(s_dev);
+        return ESP_FAIL;
+    }
 
     s_opened = true; s_hz = hz; s_bits = bits; s_ch = ch;
-    ESP_LOGI(TAG, "codec 打开 %luHz/%ubit/%uch", (unsigned long)hz, bits, ch);
+    ESP_LOGI(TAG, "codec 打开 %luHz/%ubit/%uch, 输出音量 %u%%",
+             (unsigned long)hz, bits, ch, actual_volume);
     return ESP_OK;
 }
 
@@ -173,5 +225,19 @@ esp_err_t bsp_audio_read(void *pcm, size_t bytes) {
 }
 
 void bsp_audio_set_volume(uint8_t percent) {
-    if (s_dev) esp_codec_dev_set_out_vol(s_dev, percent);
+    if (percent > 100) percent = 100;
+    s_requested_volume = percent;
+    const uint8_t actual = (uint8_t)(((uint16_t)percent * s_master_volume) / 100U);
+    if (s_dev) esp_codec_dev_set_out_vol(s_dev, actual);
+}
+
+void bsp_audio_set_master_volume(uint8_t percent) {
+    if (percent > 100) percent = 100;
+    s_master_volume = percent;
+    const uint8_t actual = (uint8_t)(((uint16_t)s_requested_volume * percent) / 100U);
+    if (s_dev) esp_codec_dev_set_out_vol(s_dev, actual);
+}
+
+uint8_t bsp_audio_get_master_volume(void) {
+    return s_master_volume;
 }

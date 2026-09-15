@@ -6,8 +6,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // 初始化 codec 与 I2S。内部会调 bsp_i2c_init()(幂等),无需外部先调。
 esp_err_t bsp_audio_init(void);
+
+// 关闭并卸载 codec/I2S,归还 DMA 与 codec 占用的堆(开机音效等一次性用途)。
+// 之后的 bsp_audio_init() 可完整重建。运行中的 App 不得调用(会拆掉它的音频)。
+void bsp_audio_deinit(void);
 
 // 设置采样格式。同格式重复调用是廉价的(直接复用已打开的 codec)。
 //
@@ -22,3 +30,12 @@ esp_err_t bsp_audio_read(void *pcm, size_t bytes);
 
 // 输出音量 0..100(%)。
 void bsp_audio_set_volume(uint8_t percent);
+
+// 整机主音量 0..100(%)。所有 App 请求的音量都会按此比例缩放，避免 App
+// 在启动时用自己的默认值覆盖用户的整机设置。
+void bsp_audio_set_master_volume(uint8_t percent);
+uint8_t bsp_audio_get_master_volume(void);
+
+#ifdef __cplusplus
+}
+#endif

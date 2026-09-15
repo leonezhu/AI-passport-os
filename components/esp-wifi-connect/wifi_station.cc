@@ -119,8 +119,11 @@ void WifiStation::Start() {
     // Clear scan done bit so Stop() can wait for scan to complete
     xEventGroupClearBits(event_group_, WIFI_EVENT_STOPPED | WIFI_EVENT_SCAN_DONE_BIT);
     
-    // Create the default WiFi station interface
-    station_netif_ = esp_netif_create_default_wifi_sta();
+    // Create or reuse the default WiFi station interface
+    station_netif_ = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (station_netif_ == nullptr) {
+        station_netif_ = esp_netif_create_default_wifi_sta();
+    }
     if (!hostname_.empty()) {
         esp_err_t err = esp_netif_set_hostname(station_netif_, hostname_.c_str());
         if (err == ESP_OK) {
@@ -176,7 +179,21 @@ bool WifiStation::WaitForConnected(int timeout_ms) {
 void WifiStation::HandleScanResult() {
     uint16_t ap_num = 0;
     esp_wifi_scan_get_ap_num(&ap_num);
+    if (ap_num == 0) {
+        if (connect_queue_.empty()) {
+            ESP_LOGI(TAG, "No AP found, next scan in %d seconds", scan_current_interval_microseconds_ / 1000 / 1000);
+            esp_timer_start_once(timer_handle_, scan_current_interval_microseconds_);
+            UpdateScanInterval();
+        } else {
+            StartConnect();
+        }
+        return;
+    }
     wifi_ap_record_t *ap_records = (wifi_ap_record_t *)malloc(ap_num * sizeof(wifi_ap_record_t));
+    if (!ap_records) {
+        ESP_LOGE(TAG, "Failed to allocate memory for %u AP records", (unsigned)ap_num);
+        return;
+    }
     esp_wifi_scan_get_ap_records(&ap_num, ap_records);
     // sort by rssi descending
     std::sort(ap_records, ap_records + ap_num, [](const wifi_ap_record_t& a, const wifi_ap_record_t& b) {
@@ -323,7 +340,12 @@ void WifiStation::SetPowerSaveLevel(WifiPowerSaveLevel level) {
             ESP_LOGI(TAG, "Setting WiFi power save level: PERFORMANCE (NONE)");
             break;
     }
-    ESP_ERROR_CHECK(esp_wifi_set_ps(ps_type));
+    // station 可能处于启动/停止过渡态,set_ps 会报错;记日志即可,期望档位由
+    // WifiManager 记忆并在 StartStation 后重放,不允许这里 abort 拖死整机。
+    esp_err_t ps_err = esp_wifi_set_ps(ps_type);
+    if (ps_err != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_set_ps(%d) failed: %s", (int)ps_type, esp_err_to_name(ps_err));
+    }
 }
 
 void WifiStation::UpdateScanInterval() {

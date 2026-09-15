@@ -379,17 +379,29 @@ bool stream_station(std::size_t station, uint32_t generation) {
 void player_task(void *) {
     std::size_t last_attempted_station = SIZE_MAX;
     uint8_t failed_attempts = 0;
+    bool reported_no_network = false;
+    bool reported_paused = false;
+
     while (true) {
         if (!s_network_connected.load(std::memory_order_acquire)) {
-            radio_ui_set_playback(RadioPlaybackState::Stopped, "等待网络");
-            vTaskDelay(pdMS_TO_TICKS(200));
+            if (!reported_no_network) {
+                radio_ui_set_playback(RadioPlaybackState::Stopped, "等待网络");
+                reported_no_network = true;
+            }
+            vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
+        reported_no_network = false;
+
         if (!s_wanted_playing.load(std::memory_order_acquire)) {
-            radio_ui_set_playback(RadioPlaybackState::Stopped, "已暂停");
-            vTaskDelay(pdMS_TO_TICKS(150));
+            if (!reported_paused) {
+                radio_ui_set_playback(RadioPlaybackState::Stopped, "已暂停");
+                reported_paused = true;
+            }
+            vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
+        reported_paused = false;
 
         const std::size_t station = s_station_index.load(std::memory_order_acquire);
         const uint32_t generation = s_generation.load(std::memory_order_acquire);
@@ -435,6 +447,9 @@ void player_task(void *) {
 }  // namespace
 
 bool radio_player_init() {
+    if (s_player_task != nullptr) {
+        return true;
+    }
     s_station_mutex = xSemaphoreCreateMutex();
     if (!s_station_mutex) return false;
     std::memcpy(s_stations, kFallbackStations, sizeof(kFallbackStations));

@@ -13,11 +13,19 @@
 
 #include "esp_err.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 esp_err_t time_sync_init(void);                // 读 NVS 时区(缺省 +8);校时状态=未校时
 void time_sync_set_epoch(int64_t epoch_sec);   // 校时(UTC 秒);置 valid + 同步系统时间
 bool time_sync_valid(void);                    // 是否已校时(UI "--:--" 判定)
 int time_sync_tz_hour(void);                   // 当前时区偏移小时(默认 8)
 esp_err_t time_sync_set_tz(int hour);          // 设置时区偏移(±12 校验,NVS 持久化)
 int time_sync_format_local(char *buf, size_t cap); // "HH:MM"(校时)或 "--:--"(未校时)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TIME_SYNC_H */

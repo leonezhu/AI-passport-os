@@ -13,7 +13,12 @@ typedef enum {
     APP_ID_LAUNCHER = 0,
     APP_ID_RADIO,
     APP_ID_VOICE,
-    APP_ID_CODEX,
+    APP_ID_XIAOZHI,
+    APP_ID_WIFI,
+    APP_ID_SETTINGS,
+    APP_ID_HOME,
+    APP_ID_GAME,
+    APP_ID_TETRIS,
     APP_ID_COUNT
 } passport_app_id_t;
 

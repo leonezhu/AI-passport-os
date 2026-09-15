@@ -4,6 +4,7 @@
 #include "bsp_pins.h"
 #include "esp_lvgl_port.h"
 #include "esp_log.h"
+#include "lvgl.h"
 
 static const char *TAG = "bsp_lvgl";
 
@@ -16,7 +17,11 @@ lv_display_t *bsp_lvgl_init(void) {
         return NULL;
     }
 
-    const lvgl_port_cfg_t pc = ESP_LVGL_PORT_INIT_CONFIG();
+    lvgl_port_cfg_t pc = ESP_LVGL_PORT_INIT_CONFIG();
+    // 默认 7168 太小:天气图标等 JPEG 走 LVGL TJPEG decoder_info/open(文件源),
+    // 栈上 TJPGD_WORKBUFF_SIZE 就有 4KB(lv_tjpgd.c:110),叠加渲染调用链实测
+    // 爆栈(Stack protection fault,2026-09-13,崩溃任务即 taskLVGL)。
+    pc.task_stack = 12288;
     if (lvgl_port_init(&pc) != ESP_OK) {
         ESP_LOGE(TAG, "lvgl_port_init 失败");
         return NULL;
@@ -25,11 +30,9 @@ lv_display_t *bsp_lvgl_init(void) {
     const lvgl_port_display_cfg_t dc = {
         .panel_handle = bsp_display_panel(),
         .io_handle    = bsp_display_io(),
-        // ⚠ C3 无 PSRAM,DMA 只能用内部 RAM(总共约 150KB)。
-        // 2 行单缓冲 ≈ 960B:heap 极限下每字节都决定 ble_worker 16384 栈
-        // (opus SILK 编码 alloca 峰值 13.3KB)能否与 NimBLE/controller 共存。
-        // 静态 UI 无感;小缓冲部分刷新略慢,可接受。
-        .buffer_size   = (uint32_t)BSP_LCD_W * 2,
+        // 12-row single buffer (~5.6 KiB) leaves enough internal RAM for the
+        // full-screen I4 Codex canvas and NimBLE on ESP32-C3 without PSRAM.
+        .buffer_size   = (uint32_t)BSP_LCD_W * 12,
         .double_buffer = false,
         .hres = BSP_LCD_W, .vres = BSP_LCD_H,
         // 旋转/镜像必须在这里配:esp_lvgl_port 注册显示时会重新下发 MADCTL,
@@ -40,6 +43,16 @@ lv_display_t *bsp_lvgl_init(void) {
     };
     s_disp = lvgl_port_add_disp(&dc);
     if (!s_disp) { ESP_LOGE(TAG, "lvgl_port_add_disp 失败"); return NULL; }
+
+    // 把 LVGL 的【默认屏】刷成黑。
+    // LVGL 默认主题的 screen 背景是近白色;开机阶段(开机动画之前/切换过程中)
+    // 只要默认屏短暂成为活动屏并被画进 GRAM,背光一亮就是一片白闪。
+    // 统一钉成黑,消除这一整类白闪 —— 与 app_registry 的过渡屏同色。
+    lv_obj_t *scr = lv_screen_active();
+    if (scr) {
+        lv_obj_set_style_bg_color(scr, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    }
 
     ESP_LOGI(TAG, "LVGL 就绪");
     return s_disp;

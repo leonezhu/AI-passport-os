@@ -27,6 +27,15 @@ void app_registry_switch_to(passport_app_id_t id);
 // 全局按键统一分发（含 1.5s 长按 OK 拦截与熄屏唤醒保护）
 void app_registry_dispatch_key(uint8_t btn, app_btn_event_t event, uint16_t mv);
 
+// 由系统心跳调用；统一处理跨 App 的息屏，不额外创建常驻任务。
+void app_registry_tick(void);
+void app_registry_set_screen_timeout(uint16_t seconds);
+uint16_t app_registry_get_screen_timeout(void);
+
+// 活动(app 活动)续期:非按键驱动的应用(如声控游戏)在持续运行时调用,
+// 抑制息屏计时。只刷新计时,不会点亮已熄灭的屏幕。
+void app_registry_keep_awake(void);
+
 #ifdef __cplusplus
 }
 #endif

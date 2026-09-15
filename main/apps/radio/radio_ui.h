@@ -31,6 +31,7 @@ enum class RadioSettingsPage {
 
 bool radio_ui_init();
 void radio_ui_show_main();
+void radio_ui_hide();
 void radio_ui_show_config(const char *ssid, const char *url);
 void radio_ui_show_wifi_list(const WifiNetworkView *networks, std::size_t count,
                              std::size_t selected, bool scanning,

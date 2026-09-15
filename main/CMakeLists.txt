@@ -1,50 +1,65 @@
 idf_component_register(
     SRCS
         "main.cc"
+        "boot_chime.c"
+        "boot_splash.c"
         "launcher/launcher.cc"
         "launcher/app_registry.cc"
+        "launcher/wifi_setup.cc"
+        "launcher/settings.cc"
         "fonts/radio_font.c"
         "fonts/radio_font_title.c"
+        "fonts/buddy_font_16.c"
+        "fonts/voice_font_20.c"
+        "fonts/ui_font_20.c"
         "apps/radio/app_radio.cc"
         "apps/radio/radio_catalog.cc"
         "apps/radio/radio_display_settings.cc"
-        "apps/radio/radio_easter_egg.cc"
         "apps/radio/radio_player.cc"
         "apps/radio/radio_sleep_timer.cc"
         "apps/radio/radio_ui.cc"
         "apps/voice/app_voice.cc"
         "apps/voice/adpcm.c"
         "apps/voice/audio_streamer.c"
-        "apps/voice/ble_audio.c"
+        "apps/voice/udp_audio.c"
         "apps/voice/app_protocol.c"
         "apps/voice/app_sound.c"
         "apps/voice/app_events.c"
         "apps/voice/app_ui.c"
         "apps/voice/app_state.c"
         "apps/voice/time_sync.c"
-        "apps/voice/ui_pixel.c"
+        "ui/ui_pixel.c"
         "apps/voice/ui_pixel_math.c"
-        "apps/codex/app_codex.cc"
-        "apps/codex/buddy_character.c"
-        "apps/codex/buddy_ble.c"
-        "apps/codex/buddy_ble_lifecycle.c"
-        "apps/codex/buddy_ble_store.c"
-        "apps/codex/buddy_settings.c"
-        "apps/codex/buddy_sound_player.c"
-        "apps/codex/buddy_sound_logic.c"
-        "apps/codex/buddy_protocol.c"
-        "apps/codex/buddy_sprite.c"
-        "apps/codex/buddy_line.c"
-        "apps/codex/buddy_i4.c"
-        "apps/codex/buddy_ui.c"
-        "apps/codex/buddy_state.c"
+        "apps/voice/mode.c"
+        "apps/voice/nvs_settings.c"
+        "apps/xiaozhi/xiaozhi_protocol.cc"
+        "apps/xiaozhi/xiaozhi_audio.cc"
+        "apps/xiaozhi/xiaozhi_ui.cc"
+        "apps/xiaozhi/xiaozhi_store.cc"
+        "apps/xiaozhi/xiaozhi_ota.cc"
+        "apps/xiaozhi/app_xiaozhi.cc"
+        "apps/home/home_profile.c"
+        "apps/home/home_clock.c"
+        "apps/home/home_weather.c"
+        "apps/home/band_art.c"
+        "apps/home/home_upload.cc"
+        "apps/home/app_home.cc"
+        "apps/game/game_core.c"
+        "apps/game/game_mic.c"
+        "apps/game/game_sfx.c"
+        "apps/game/app_game.cc"
+        "apps/game/tetris_core.c"
+        "apps/game/app_tetris.cc"
     INCLUDE_DIRS
         "."
         "launcher"
         "apps"
         "apps/radio"
         "apps/voice"
-        "apps/codex"
+        "apps/xiaozhi"
+        "apps/home"
+        "apps/game"
+        "ui"
         "fonts"
     REQUIRES
         bsp
@@ -52,10 +67,15 @@ idf_component_register(
         esp_wifi
         nvs_flash
         esp_http_client
+        esp_websocket_client
         json
         mbedtls
-        bt
         esp_codec_dev
         esp_audio_codec
         esp_timer
+        spi_flash
+        esp_driver_usb_serial_jtag
+        esp_http_server
+        spiffs
+        lwip
 )

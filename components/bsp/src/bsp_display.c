@@ -5,6 +5,7 @@
 #include "bsp_pins.h"
 #include "driver/spi_master.h"
 #include "driver/ledc.h"
+#include "esp_heap_caps.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
@@ -17,6 +18,8 @@ static const char *TAG = "bsp_disp";
 static esp_lcd_panel_handle_t    s_panel;
 static esp_lcd_panel_io_handle_t s_io;
 static bool                      s_bl_ready;
+static uint8_t                   s_requested_brightness = 100;
+static uint8_t                   s_master_brightness = 80;
 
 // ---------------------------------------------------------------------------
 // ST7789P3 厂商专属初始化序列(porch / power / gamma)。
@@ -131,6 +134,14 @@ esp_err_t bsp_display_init(void) {
     esp_lcd_panel_set_gap(s_panel, 0, 0);
     esp_lcd_panel_disp_on_off(s_panel, true);                    // 0x29 DISPON
 
+    // DISPON 之后、点背光之前,先把整屏 GRAM 铺成黑。
+    // ST7789 上电时 GRAM 未初始化,显示出来是一片白;只要有任何时刻背光比
+    // "首帧刷完"早一点,露出的就是白闪。这里先钉成黑,把这类白闪的源头去掉。
+    {
+        esp_err_t fr = bsp_display_fill(0x0000);
+        if (fr != ESP_OK) ESP_LOGW(TAG, "清屏失败: %s", esp_err_to_name(fr));
+    }
+
     backlight_init();
     ESP_LOGI(TAG, "显示就绪 %dx%d", BSP_LCD_W, BSP_LCD_H);
     return ESP_OK;
@@ -140,13 +151,63 @@ esp_lcd_panel_handle_t bsp_display_panel(void) { return s_panel; }
 
 esp_lcd_panel_io_handle_t bsp_display_io(void) { return s_io; }
 
+// 不经 LVGL,直接把整屏 GRAM 同步铺成一个纯色。
+//
+// 为什么需要它:LVGL 这边是 **12 行单缓冲**(bsp_display_lvgl.c),整屏 320 行要
+// 分 27 块推,且 flush 是异步的。所以 lv_refr_now() 未必能把首帧推完 —— 点亮
+// 背光时没推到的区域露出来的就是"上电未初始化的白色 GRAM / LVGL 默认白底屏",
+// 这就是开机点亮背光那一瞬的白闪。
+//
+// 这里用 esp_lcd_panel_draw_bitmap 逐块同步写(无回调 → polling 发送,写完才返回),
+// 保证返回时整屏已经是一个确定颜色。放在点背光之前调用,白闪就没有了。
+//
+// color 用 LVGL 的 RGB565 表示(与 lv_color_to_u16 同序);面板方向是 swap_bytes,
+// 这里自己交换高低字节,效果与 esp_lvgl_port 的 .swap_bytes = true 一致。
+esp_err_t bsp_display_fill(uint16_t color) {
+    if (!s_panel) return ESP_ERR_INVALID_STATE;
+
+    const int    chunk = 16;                       // 16 行/块:16*240*2 = 7.5KB
+    const size_t n     = (size_t)BSP_LCD_W * chunk;
+    uint16_t    *buf   = (uint16_t *)heap_caps_malloc(n * sizeof(uint16_t),
+                                                      MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!buf) return ESP_ERR_NO_MEM;
+
+    const uint16_t be = (uint16_t)((color >> 8) | (color << 8));   // → 大端
+    for (size_t i = 0; i < n; ++i) buf[i] = be;
+
+    esp_err_t ret = ESP_OK;
+    for (int y = 0; y < BSP_LCD_H; y += chunk) {
+        const int h = (y + chunk <= BSP_LCD_H) ? chunk : (BSP_LCD_H - y);
+        esp_err_t r = esp_lcd_panel_draw_bitmap(s_panel, 0, y, BSP_LCD_W, y + h, buf);
+        if (r != ESP_OK) { ret = r; break; }
+    }
+    // 等待所有已排队的 SPI DMA 传输完全落地,防止释放内存后被 DMA 读取导致数据损坏
+    if (s_io) {
+        esp_lcd_panel_io_tx_param(s_io, 0x00, NULL, 0);
+    }
+    heap_caps_free(buf);
+    return ret;
+}
+
 void bsp_display_backlight(uint8_t percent) {
-    if (!s_bl_ready) return;
     if (percent > 100) percent = 100;
+    s_requested_brightness = percent;
+    percent = (uint8_t)(((uint16_t)percent * s_master_brightness) / 100U);
+    if (!s_bl_ready) return;
     uint32_t max_duty = (1u << BSP_BL_LEDC_RES) - 1u;
     uint32_t duty = (max_duty * percent) / 100u;
     ledc_set_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL, duty);
     ledc_update_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL);
+}
+
+void bsp_display_set_master_brightness(uint8_t percent) {
+    if (percent > 100) percent = 100;
+    s_master_brightness = percent;
+    bsp_display_backlight(s_requested_brightness);
+}
+
+uint8_t bsp_display_get_master_brightness(void) {
+    return s_master_brightness;
 }
 
 void bsp_display_power(bool on) {
@@ -159,6 +220,9 @@ void bsp_display_power(bool on) {
         vTaskDelay(pdMS_TO_TICKS(120));                     // 等内部时钟稳定(SLPIN 后必需)
         esp_lcd_panel_disp_on_off(s_panel, true);           // DISPON 恢复显示
     } else {
+        // 顺序很关键:先 DISPOFF(0x28) 停像素驱动,再 SLPIN(0x10) 停内部振荡器。
+        // P3 面板实测只发 SLPIN 不灭屏——液晶仍被扫描驱动,留有内容残影。
+        esp_lcd_panel_disp_on_off(s_panel, false);          // DISPOFF 像素全灭
         esp_lcd_panel_io_tx_param(s_io, 0x10, NULL, 0);     // SLPIN 睡眠
     }
 }

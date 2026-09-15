@@ -15,6 +15,10 @@ extern "C" {
 // 建基底屏、7 个状态组与 chrome。须在 bsp_display_init + bsp_lvgl_init 成功后调用,
 // 且调用方须持 LVGL 锁(bsp_lvgl_lock)。
 esp_err_t app_ui_init(void);
+void app_ui_deinit(void);
+
+void app_ui_show(void);
+void app_ui_hide(void);
 
 // 按快照刷新 UI。同样须持锁调用(唯一写者:app_task)。
 // 息屏切换由 snapshot.screen_on 驱动(背光 0/100)。

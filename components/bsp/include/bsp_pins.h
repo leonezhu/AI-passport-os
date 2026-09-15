@@ -32,7 +32,9 @@
 #define BSP_BL_LEDC_MODE     LEDC_LOW_SPEED_MODE
 #define BSP_BL_LEDC_CHANNEL  LEDC_CHANNEL_0
 #define BSP_BL_LEDC_RES      LEDC_TIMER_10_BIT
-#define BSP_BL_LEDC_FREQ_HZ  5000
+/* 20kHz:移出人耳可听范围。原 5kHz 在主亮度<100% 时会让背光升压电路
+   发出可闻嗡鸣(占空比 100% 时为直流不响)。80MHz APB 下 20kHz@10bit 合法。 */
+#define BSP_BL_LEDC_FREQ_HZ  20000
 
 // ============================================================================
 // 按键:三键共用一个 ADC 引脚,靠分压电阻区分
@@ -55,8 +57,8 @@
 #define BSP_BTN_COUNT        3
 
 // 每键的电压窗口 {min_mV, max_mV};边界取相邻档中点。
-// 确定键上界留宽到 1900,是为了和松开态的 3300mV 拉开距离。
-#define BSP_BTN_MV_TABLE  { {0, 150}, {150, 447}, {447, 1900} }
+// 实物实测：UP(+) 约 15mV，DOWN(-) 约 1060mV，OK 约 2073mV，松开 >= 2500mV。
+#define BSP_BTN_MV_TABLE  { {0, 400}, {400, 1600}, {1600, 2500} }
 
 // ============================================================================
 // I2C:ES8311(音频 codec)与 CW2017(电量计)共用一条总线

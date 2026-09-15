@@ -19,7 +19,7 @@
 // 期间冒出的假 UP 按下,598 落在 OK 档),按下即录的话它会直接开一次录音。
 // 故 UP 侧一律用本档上限判真假(DOWN 清空仍用 PTT_FAKE_LONG_MV:DOWN 档 150-447,
 // 真实读数 303-305,收到 150 会把自己挡掉)。
-#define PTT_UP_PRESS_MAX_MV 150
+#define PTT_UP_PRESS_MAX_MV 400
 
 // 连接握手期(~0.4-1s:参数协商/DLE/PHY 更新)密集射频会把按键 ADC 整段
 // 腐蚀成 0mV → 假 UP 长按 → 自动开录音(真机实测: 连接后 130s 内自动触发
@@ -69,8 +69,8 @@
 // 对称性补齐,不是已发生缺陷的修复。
 // ⚠ 只用于"上锁",解锁那条路径故意不加门禁:门禁判错的代价不对称 —— 挡掉一次
 //   幽灵上锁毫无损失,挡掉一次真解锁等于用户面对一块砖。
-#define OK_PRESS_MIN_MV 447
-#define OK_PRESS_MAX_MV 1900
+#define OK_PRESS_MIN_MV 1600
+#define OK_PRESS_MAX_MV 2500
 
 // 幽灵事件判定(与各分支自己的 mv 门禁同口径,集中一处便于对账)。
 // 只有"手指还在键上"的事件类型可判:PRESS 与 LONG 回调时刻按压仍在,mv 必落
@@ -136,9 +136,11 @@ void app_state_snapshot(const app_state_t *s, uint64_t now_ms, app_ui_snapshot_t
     snap->panel_on         = s->panel_on;
     snap->net_busy         = s->net_busy;
     snap->ble_connected    = s->ble_connected;
+    // 2026-09-12:链路通道已由 BLE 换成 Wi-Fi UDP,横幅显示名同步改为 "WiFi"
+    // (USB 通道已移除,该分支保留仅为类型完整,永不命中)。
     str_cpy(snap->link_name, sizeof(snap->link_name),
             s->link_channel == APP_CHAN_USB ? "USB"
-            : "BLE");
+            : "WiFi");
     snap->elapsed_ms       = (uint32_t)(now_ms - s->state_since_ms);
     snap->battery_available = true; // 由主循环在快照后补真实值,见 app_ui
     str_cpy(snap->agent_message, sizeof(snap->agent_message), s->agent_message);
@@ -173,7 +175,7 @@ static void send_key_action(app_state_t *s, app_key_action_t action,
 static void start_ptt(app_state_t *s, uint64_t now_ms,
                       app_action_t *out, uint8_t *n, uint8_t max) {
     if (!s->link_up) {
-        set_toast(s, now_ms, "OFFLINE - PTT blocked");
+        set_toast(s, now_ms, "未连接电脑，无法录音");
         app_action_t t = { .type = APP_ACT_PLAY_TONE };
         t.u.tone = APP_TONE_ERROR;
         emit(out, n, max, t);
@@ -192,17 +194,25 @@ static void start_ptt(app_state_t *s, uint64_t now_ms,
         s->stream_started = false;
         s->state = APP_ST_LISTENING;
         s->state_since_ms = now_ms;
+        // 新会话:清掉上一句的转写文本。LISTENING 页现在会**实时**渲染
+        // agent_message(边说边出字),不清就会在新一句刚开口、首条中间结果
+        // 还没到时先闪出上一句的残留。TRANSCRIBING 页同样受益。
+        s->agent_message[0] = '\0';
+        s->transcript_final = false;
     }
 }
 
-// PTT 结束(音量加长按松开):停流 → voice.end → 转写。
-// 不播发送音:用户要求转写期静音(2026-08-28)。
+// PTT 结束(音量加长按松开):停流 → voice.end → 等待用户按 DOWN 发送。
+// 电脑端在 voice.end 时会再次点击右 Shift，输入法自行结束识别并把文字落到
+// 当前输入框；设备不再等待 transcript 回传，否则页面会永久卡在“正在识别”。
 static void end_ptt(app_state_t *s, uint64_t now_ms,
                     app_action_t *out, uint8_t *n, uint8_t max) {
     app_action_t st = { .type = APP_ACT_STREAM_STOP };
     emit(out, n, max, st);
     app_action_t v = { .type = APP_ACT_SEND_VOICE_END };
     emit(out, n, max, v);
+    // 沿用 APP_ST_TRANSCRIBING 的枚举值以保持协议/页面索引兼容，但该状态现在
+    // 表示“语音完成，等待 DOWN=Enter 发送”，不再表示后台转写处理中。
     s->state = APP_ST_TRANSCRIBING;
     s->state_since_ms = now_ms;
     s->agent_state_name[0] = '\0';   // 新会话开始,清除旧 agent 状态
@@ -401,7 +411,7 @@ static void handle_key(app_state_t *s, const app_event_t *ev, uint64_t now_ms,
             emit(out, n, max, a);
             s->state = APP_ST_AGENT_RUNNING;
             s->state_since_ms = now_ms;
-            str_cpy(s->agent_message, sizeof(s->agent_message), "Approved, agent continues...");
+            str_cpy(s->agent_message, sizeof(s->agent_message), "已批准，继续执行");
             s->transcript_final = true;   // 非转写文本,无预览光标
             app_action_t r = { .type = APP_ACT_UI_REFRESH };
             emit(out, n, max, r);
@@ -415,7 +425,7 @@ static void handle_key(app_state_t *s, const app_event_t *ev, uint64_t now_ms,
             emit(out, n, max, t);
             s->state = APP_ST_AGENT_RUNNING;
             s->state_since_ms = now_ms;
-            str_cpy(s->agent_message, sizeof(s->agent_message), "Rejected by user");
+            str_cpy(s->agent_message, sizeof(s->agent_message), "已拒绝");
             s->transcript_final = true;   // 非转写文本,无预览光标
             app_action_t r = { .type = APP_ACT_UI_REFRESH };
             emit(out, n, max, r);
@@ -425,8 +435,14 @@ static void handle_key(app_state_t *s, const app_event_t *ev, uint64_t now_ms,
         break;
 
     case APP_ST_TRANSCRIBING:
-        // 音量+单击:退出转写场景(2026-08-28 用户需求)——不等识别结果,直接
-        // 回 READY。迟到的识别文本由 APP_EV_TRANSCRIPT 的 READY/HOME 门禁丢弃。
+        // 语音已在电脑输入法中完成:DOWN=Enter 确认发送并回 READY；UP=取消返回。
+        if (ev->type == APP_EV_KEY_CLICK && b == APP_BTN_DOWN) {
+            send_key_action(s, APP_KEY_ENTER, out, n, max);
+            go_ready(s, now_ms, out, n, max);
+            break;
+        }
+        // 音量+单击:不发送，直接回 READY。迟到的旧 transcript 由
+        // APP_EV_TRANSCRIPT 的 READY/HOME 门禁丢弃。
         // 真实单击的 PRESS 回调 mv=3-5(手指在键上);假按的 PRESS 读数落在别的
         // 分压档(2890 松开电平 / 598 跨档)→ 用 PRESS 读数区分真假单击(CLICK
         // 回调时刻用户已松手,mv 恒 2890,不可用)。按下即录不影响这里:转写态
@@ -495,8 +511,9 @@ static void handle_tick(app_state_t *s, uint64_t now_ms, app_action_t *out, uint
         }
         break;
     case APP_ST_TRANSCRIBING:
+        // 完成页只作为发送确认停留态；超时后静默回到准备页。
         if (elapsed >= APP_TRANSCRIBE_TIMEOUT) {
-            abort_to_ready(s, now_ms, "STT timeout", out, n, max);
+            abort_to_ready(s, now_ms, NULL, out, n, max);
         }
         break;
     case APP_ST_AGENT_RUNNING:
@@ -647,7 +664,7 @@ void app_state_reduce(app_state_t *s, const app_event_t *ev, uint64_t now_ms,
         }
         break;
 
-    case APP_EV_BLE_CONNECTED:
+    case APP_EV_LINK_UP:
         // 语义:EVENT 特征已订阅(链路通,PTT 可用)。
         // 双通道常开(2026-08-28):BLE 连接总是链路候选 —— link_up 已通时
         // 只更新图标;空闲态(HOME/READY)记为新会话通道(最近使用),活动
@@ -666,7 +683,7 @@ void app_state_reduce(app_state_t *s, const app_event_t *ev, uint64_t now_ms,
         }
         break;
 
-    case APP_EV_BLE_DISCONNECTED:
+    case APP_EV_LINK_DOWN:
         s->ble_connected = false;
         if (s->link_channel == APP_CHAN_BLE) {
             // 会话通道断开:收束会话(停流回 READY + toast),路由切到仍通
@@ -674,7 +691,7 @@ void app_state_reduce(app_state_t *s, const app_event_t *ev, uint64_t now_ms,
             // (横幅显示),link_up=false。另一通道断开不影响本会话(上方
             // 分支不成立时仅刷新图标)。
             s->link_up = false;
-            handle_link_down(s, now_ms, "Mac disconnected", out, out_n, max);
+            handle_link_down(s, now_ms, "电脑已断开", out, out_n, max);
             if (mode_channel_up(APP_CHAN_USB)) {
                 s->link_channel = APP_CHAN_USB;
                 s->link_up = true;
@@ -686,8 +703,8 @@ void app_state_reduce(app_state_t *s, const app_event_t *ev, uint64_t now_ms,
         }
         break;
 
-    case APP_EV_BLE_DROP:
-        set_toast(s, now_ms, "BLE event dropped");
+    case APP_EV_LINK_DROP:
+        set_toast(s, now_ms, "事件丢失");
         {
             app_action_t br = { .type = APP_ACT_UI_REFRESH };
             emit(out, out_n, max, br);
@@ -708,7 +725,7 @@ void app_state_reduce(app_state_t *s, const app_event_t *ev, uint64_t now_ms,
             app_action_t v = { .type = APP_ACT_SEND_VOICE_END };
             emit(out, out_n, max, v);
         }
-        set_toast(s, now_ms, "Audio error");
+        set_toast(s, now_ms, "录音出错");
         abort_to_ready(s, now_ms, NULL, out, out_n, max);
         break;
 
@@ -757,7 +774,7 @@ void app_state_reduce(app_state_t *s, const app_event_t *ev, uint64_t now_ms,
         if (s->link_channel == APP_CHAN_USB) {
             s->link_up = false;
             // 状态收束与 BLE 断连同路径;toast 文案区分通道
-            handle_link_down(s, now_ms, "USB disconnected", out, out_n, max);
+            handle_link_down(s, now_ms, "USB 已断开", out, out_n, max);
             if (mode_channel_up(APP_CHAN_BLE)) {
                 s->link_channel = APP_CHAN_BLE;
                 s->link_up = true;

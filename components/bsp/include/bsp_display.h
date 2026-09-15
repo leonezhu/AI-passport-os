@@ -7,6 +7,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // 初始化 SPI 总线、面板、厂商寄存器、背光 LEDC。成功后屏幕已上电但内容未定。
 esp_err_t bsp_display_init(void);
 
@@ -17,8 +21,18 @@ esp_lcd_panel_handle_t bsp_display_panel(void);
 // 取底层 panel io 句柄(LVGL 接入需要)。未初始化返回 NULL。
 esp_lcd_panel_io_handle_t bsp_display_io(void);
 
+// 不经 LVGL,同步把整屏 GRAM 铺成一个纯色(LVGL RGB565 表示,如 0x03120B)。
+// 用于"必须保证整屏已是确定颜色"的场合 —— 典型:点亮背光前先把底铺好,
+// 否则 LVGL 单缓冲分块异步刷新没推到的区域会露出未初始化的白屏。
+// 阻塞到写完。需要约 7.5KB 内部 DMA 内存,失败返回 ESP_ERR_NO_MEM。
+esp_err_t bsp_display_fill(uint16_t color);
+
 // 背光亮度 0..100(%)。LEDC PWM,0=全灭。
 void bsp_display_backlight(uint8_t percent);
+
+// 整机亮度上限 0..100(%)。App 仍可熄屏或临时调暗，但不能越过用户设置。
+void bsp_display_set_master_brightness(uint8_t percent);
+uint8_t bsp_display_get_master_brightness(void);
 
 // 面板电源:off → ST7789 SLPIN(0x10) 睡眠——内部振荡器停,功耗降至 μA 级;
 // on → SLPOUT(0x11) + 120ms 等待 + DISPON(0x29)。DRAM 内容保留,唤醒即显示,
@@ -39,3 +53,7 @@ struct _lv_display_t *bsp_lvgl_init(void);
 // LVGL 非线程安全:在【非 LVGL 任务】里操作任何 lv_* 对象前后必须加解锁。
 bool bsp_lvgl_lock(int timeout_ms);
 void bsp_lvgl_unlock(void);
+
+#ifdef __cplusplus
+}
+#endif

@@ -90,13 +90,7 @@ void WifiConfigurationAp::Start()
     StartAccessPoint();
     StartWebServer();
     
-    // Start scan immediately
-    esp_wifi_scan_start(nullptr, false);
-    // Setup periodic WiFi scan timer.
-    // skip_unhandled_events = false so the timer can wake the CPU from light
-    // sleep on its own; otherwise the AP-mode scan list would stop refreshing
-    // whenever the user paused interacting with the config web UI. See
-    // esp_timer_get_next_alarm_for_wake_up in components/esp_timer/src/esp_timer.c.
+    // Setup periodic WiFi scan timer before triggering scan to prevent null timer race condition
     esp_timer_create_args_t timer_args = {
         .callback = [](void* arg) {
             auto* self = static_cast<WifiConfigurationAp*>(arg);
@@ -109,7 +103,12 @@ void WifiConfigurationAp::Start()
         .name = "wifi_scan_timer",
         .skip_unhandled_events = false
     };
-    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &scan_timer_));
+    if (scan_timer_ == nullptr) {
+        ESP_ERROR_CHECK(esp_timer_create(&timer_args, &scan_timer_));
+    }
+
+    // Start scan immediately
+    esp_wifi_scan_start(nullptr, false);
 }
 
 std::string WifiConfigurationAp::GetSsid()
@@ -144,6 +143,11 @@ void WifiConfigurationAp::StartAccessPoint()
     
     // Create the default WiFi AP interface
     ap_netif_ = esp_netif_create_default_wifi_ap();
+
+    // In APSTA mode, ensure default station netif exists
+    if (esp_netif_get_handle_from_ifkey("WIFI_STA_DEF") == nullptr) {
+        esp_netif_create_default_wifi_sta();
+    }
 
     // Set the router IP address to 192.168.4.1
     esp_netif_ip_info_t ip_info;
@@ -835,11 +839,17 @@ void WifiConfigurationAp::WifiEventHandler(void* arg, esp_event_base_t event_bas
         uint16_t ap_num = 0;
         esp_wifi_scan_get_ap_num(&ap_num);
 
-        self->ap_records_.resize(ap_num);
-        esp_wifi_scan_get_ap_records(&ap_num, self->ap_records_.data());
+        if (ap_num > 0) {
+            self->ap_records_.resize(ap_num);
+            esp_wifi_scan_get_ap_records(&ap_num, self->ap_records_.data());
+        } else {
+            self->ap_records_.clear();
+        }
 
         // 扫描完成，等待10秒后再次扫描
-        esp_timer_start_once(self->scan_timer_, 10 * 1000000);
+        if (self->scan_timer_ != nullptr) {
+            esp_timer_start_once(self->scan_timer_, 10 * 1000000);
+        }
     }
 }
 
