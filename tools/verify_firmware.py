@@ -13,14 +13,14 @@ from pathlib import Path
 EXPECTED_IMAGES = (
     (0x0000, "bootloader/bootloader.bin"),
     (0x8000, "partition_table/partition-table.bin"),
-    (0x10000, "FoloToy-AI-Passport.bin"),
+    (0x10000, "passport-os.bin"),
 )
 
 FLASH_SIZE = 8 * 1024 * 1024
 PARTITION_TABLE_OFFSET = 0x8000
 PARTITION_TABLE_SIZE = 0xC00
-APP_MAX_SIZE = 0x300000
-CARDID_OFFSET = 0x356000
+APP_MAX_SIZE = 0x400000
+CARDID_OFFSET = 0x410000
 CARDID_SIZE = 0x4000
 RECOVERY_OFFSET = 0x700000
 RECOVERY_SIZE = 0x100000
@@ -82,11 +82,17 @@ def verify_protected_layout(merged: bytes, build_dir: Path) -> None:
         raise ValueError("partition table has no MD5 marker")
 
     by_label = {item.label: item for item in partitions}
+    # Match the committed Passport OS layout, not the predecessor project.
+    # Recovery is a reserved physical region even though it has no CSV entry.
     expected = {
+        "nvs": Partition(1, 2, 0x9000, 0x6000, "nvs"),
+        "phy_init": Partition(1, 1, 0xF000, 0x1000, "phy_init"),
+        "storage": Partition(1, 0x82, 0x420000, 0x200000, "storage"),
         "factory": Partition(0, 0, 0x10000, APP_MAX_SIZE, "factory"),
         "cardid": Partition(1, 2, CARDID_OFFSET, CARDID_SIZE, "cardid"),
-        "recovery": Partition(0, 0x20, RECOVERY_OFFSET, RECOVERY_SIZE, "recovery"),
     }
+    if "recovery" in by_label:
+        expected["recovery"] = Partition(0, 0x20, RECOVERY_OFFSET, RECOVERY_SIZE, "recovery")
     for label, wanted in expected.items():
         if by_label.get(label) != wanted:
             raise ValueError(f"partition {label!r} must remain {wanted}, got {by_label.get(label)}")
@@ -101,7 +107,7 @@ def verify_protected_layout(merged: bytes, build_dir: Path) -> None:
         if item.label != "recovery" and item.offset < RECOVERY_OFFSET + RECOVERY_SIZE and RECOVERY_OFFSET < item.end:
             raise ValueError(f"partition {item.label!r} overlaps permanent Recovery")
 
-    app_path = build_dir / "FoloToy-AI-Passport.bin"
+    app_path = build_dir / "passport-os.bin"
     app_size = app_path.stat().st_size
     if app_size > APP_MAX_SIZE:
         raise ValueError(f"application is {app_size} bytes; limit is {APP_MAX_SIZE}")
