@@ -1,9 +1,4 @@
-// main/launcher/launcher.cc —— 应用抽屉(像素风)。
-//
-// 2026-09-13 全机 UI 统一:深色圆角卡片风 → 与 AI语音 一致的像素风
-// (天蓝底+云+草地 / 纸卡+墨描边+硬阴影 / 像素块图标 / 中文标题 ui_font_20 /
-//  底部提示胶囊 / 墨色顶栏)。图标统一为"方块拼像素画",每个 App 一个
-//  像素主题色,与整机调色板(ui_pixel.h)同源。
+// Application drawer: shared phosphor palette and pixel icons.
 #include "launcher/launcher.h"
 #include "launcher/app_registry.h"
 #include "wifi_manager.h"
@@ -25,11 +20,11 @@ constexpr size_t kMaxApps = 8;
 constexpr size_t kIconParts = 10;
 
 // 绿磷光配色:与首页(app_home.cc)完全同源,风格统一。
-constexpr uint32_t kBg = 0x03120B;          // 屏底近黑绿
-constexpr uint32_t kCardBg = 0x051910;      // 卡片底
-constexpr uint32_t kPhos = 0x8CF5A6;        // 磷光绿:图标/标题/选中态
-constexpr uint32_t kPhosDim = 0x3F8F5F;     // 暗绿:副标题/未选中
-constexpr uint32_t kPhosBorder = 0x2E7C4E;  // 卡片/底板描边
+constexpr uint32_t kBg = UI_BG;          // 屏底近黑绿
+constexpr uint32_t kCardBg = UI_SURFACE;      // 卡片底
+constexpr uint32_t kPhos = UI_ACCENT;        // 磷光绿:图标/标题/选中态
+constexpr uint32_t kPhosDim = UI_TEXT_DIM;     // 暗绿:副标题/未选中
+constexpr uint32_t kPhosBorder = UI_BORDER;  // 卡片/底板描边
 
 lv_obj_t *s_screen;
 lv_obj_t *s_card;
@@ -86,7 +81,7 @@ void set_frame(size_t index, int x, int y, int w, int h, uint32_t color,
     lv_obj_set_style_radius(part, 0, 0);
     lv_obj_set_style_border_width(part, border, 0);
     lv_obj_set_style_border_color(part, lv_color_hex(color), 0);
-    lv_obj_set_style_bg_color(part, lv_color_hex(UI_PAPER), 0);
+    lv_obj_set_style_bg_color(part, lv_color_hex(UI_BG), 0);
     lv_obj_set_style_bg_opa(part, LV_OPA_COVER, 0);
 }
 
@@ -326,13 +321,7 @@ void launcher_ui_init(void) {
         lv_obj_clear_flag(s_page_dots[i], LV_OBJ_FLAG_SCROLLABLE);
     }
 
-    // ---- 底部提示:绿字 + 1px 黑投影(磷光风,与首页 footer 同款) ----
-    lv_obj_t *hint_shadow = ui_pixel_label_ls(s_screen, "上下选择  确定进入",
-                                              &ui_font_20, 0x000000, UI_LS_BODY);
-    lv_obj_align(hint_shadow, LV_ALIGN_BOTTOM_MID, 1, 0);
-    lv_obj_t *hint = ui_pixel_label(s_screen, "上下选择  确定进入",
-                                    &ui_font_20, kPhos);
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -1);
+    ui_pixel_hint_pill(s_screen, "上下选择  确定进入", &buddy_font_16);
 
     update_card_content();
     launcher_ui_update_status();

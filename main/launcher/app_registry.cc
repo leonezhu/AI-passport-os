@@ -1,5 +1,6 @@
 #include "launcher/app_registry.h"
 #include "launcher/launcher.h"
+#include "launcher/wake_gate.h"
 #include "bsp_display.h"
 #include "bsp_button.h"
 #include "esp_log.h"
@@ -42,7 +43,8 @@ const passport_app_t *s_apps[] = {
 };
 
 constexpr size_t kAppCount = sizeof(s_apps) / sizeof(s_apps[0]);
-passport_app_id_t s_active_id = APP_ID_LAUNCHER;
+std::atomic<passport_app_id_t> s_active_id{APP_ID_LAUNCHER};
+wake_gate_t s_wake_gate{};
 bool s_initialized[APP_ID_COUNT] = {};
 
 // 2026-09-13:switch_to() 会被三个不同任务调用(input_task 按键/长按、
@@ -57,11 +59,11 @@ struct SwitchGuard {
     bool owned = false;
     bool try_take() {
         if (!s_switch_mutex) return false;
-        owned = xSemaphoreTake(s_switch_mutex, pdMS_TO_TICKS(3000)) == pdTRUE;
+        owned = xSemaphoreTakeRecursive(s_switch_mutex, pdMS_TO_TICKS(3000)) == pdTRUE;
         return owned;
     }
     ~SwitchGuard() {
-        if (owned && s_switch_mutex) xSemaphoreGive(s_switch_mutex);
+        if (owned && s_switch_mutex) xSemaphoreGiveRecursive(s_switch_mutex);
     }
 };
 
@@ -94,7 +96,7 @@ lv_obj_t *show_transition_screen() {
     if (screen) {
         // 过渡屏用中性黑:首页已是黑底磷光风,亮蓝色闪过会非常突兀;
         // 黑色在两种主题(像素风/磷光风)下都读作"翻页"而非"变色"。
-        lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_bg_color(screen, lv_color_hex(UI_BG), 0);
         lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
         lv_screen_load(screen);
         // 异步 UI（Codex）可能把上一次过渡页保留到下一次切换；此刻已有
@@ -125,7 +127,7 @@ void release_transition_screen(lv_obj_t *screen) {
 
 void app_registry_init(void) {
     ESP_LOGI(TAG, "Initializing app registry with %u apps...", (unsigned)kAppCount);
-    if (!s_switch_mutex) s_switch_mutex = xSemaphoreCreateMutex();
+    if (!s_switch_mutex) s_switch_mutex = xSemaphoreCreateRecursiveMutex();
     s_last_activity_us.store(esp_timer_get_time(), std::memory_order_release);
     s_active_id = APP_ID_LAUNCHER;
     // 不在这里初始化/加载 Launcher 界面:开机直接由 main 走开机动画后进首页,
@@ -168,6 +170,9 @@ void app_registry_switch_to(passport_app_id_t id) {
         return;
     }
 
+    // Another caller may have completed this same switch while we waited.
+    if (s_active_id == id) return;
+
     // 目标 App 必须真实存在,否则会卡在过渡屏(黑屏):不启动任何 App 时,
     // release_transition_screen() 会把过渡屏留作活动屏,用户就永远停在黑屏上。
     // 这个守卫在 2026-09-12 移除 AI设备 模块后加,防止残留 id 再次踩坑。
@@ -177,7 +182,7 @@ void app_registry_switch_to(passport_app_id_t id) {
         return;
     }
 
-    ESP_LOGI(TAG, "Switching app: %d -> %d", s_active_id, id);
+    ESP_LOGI(TAG, "Switching app: %d -> %d", (int)s_active_id.load(), id);
 
     // 永远先切到一个极小的过渡 screen，再销毁当前页面。直接删除 LVGL 的
     // active screen 会让 display 保留悬空指针，下一次 layout 可形成父链死循环。
@@ -221,19 +226,27 @@ void app_registry_switch_to(passport_app_id_t id) {
 }
 
 void app_registry_dispatch_key(uint8_t btn, app_btn_event_t event, uint16_t mv) {
+    // Hold the same lifecycle lock as stop/start while calling app->on_key.
+    // Recursive because a key handler may itself request an app switch.
+    SwitchGuard guard;
+    if (!guard.try_take()) return;
     int64_t now = esp_timer_get_time();
-    ESP_LOGI(TAG, "Dispatch Key: btn=%d, evt=%d, mv=%u, cur_active=%d", btn, event, mv, s_active_id);
+    ESP_LOGI(TAG, "Dispatch Key: btn=%d, evt=%d, mv=%u, cur_active=%d", btn, event, mv, (int)s_active_id.load());
+
+    if (wake_gate_consume(&s_wake_gate, event == BTN_EVT_PRESS)) return;
 
     // 1. 熄屏唤醒护栏：如果屏幕已休眠，第一按只点亮屏幕，不透传给业务
     if (!s_screen_on.load(std::memory_order_acquire)) {
         if (event == BTN_EVT_PRESS || event == BTN_EVT_CLICK) {
             // 先唤醒面板(SLPOUT+DISPON,内部含 120ms 稳定等待),再开背光,
             // 恢复 LVGL 刷新并补一次整屏重绘(睡眠期间的刷屏被面板丢弃过)。
+            wake_gate_arm(&s_wake_gate);
+            if (!bsp_lvgl_lock(500)) return;
             bsp_display_power(true);
             bsp_display_backlight(100);
             s_screen_on.store(true, std::memory_order_release);
             s_last_activity_us.store(now, std::memory_order_release);
-            if (bsp_lvgl_lock(200)) {
+            {
                 lv_timer_t *refr = lv_display_get_refr_timer(lv_display_get_default());
                 if (refr) lv_timer_resume(refr);
                 lv_obj_t *scr = lv_screen_active();
@@ -284,8 +297,8 @@ void app_registry_dispatch_key(uint8_t btn, app_btn_event_t event, uint16_t mv) 
 }
 
 void app_registry_tick(void) {
-    if (s_pending_transition && bsp_lvgl_lock(50)) {
-        if (lv_screen_active() != s_pending_transition) {
+    if (bsp_lvgl_lock(50)) {
+        if (s_pending_transition && lv_screen_active() != s_pending_transition) {
             lv_obj_delete(s_pending_transition);
             s_pending_transition = nullptr;
         }
@@ -301,14 +314,19 @@ void app_registry_tick(void) {
         // 持 LVGL 锁做息屏:与刷屏事务串行,避免 DISPOFF/SLPIN 插进 DMA 传输中间;
         // 睡眠期间顺手暂停 LVGL 刷新(往睡着的面板刷数据既费电又无意义)。
         if (bsp_lvgl_lock(200)) {
+            const int64_t latest = s_last_activity_us.load(std::memory_order_acquire);
+            if (esp_timer_get_time() - latest < static_cast<int64_t>(timeout) * 1000000LL) {
+                bsp_lvgl_unlock();
+                return;
+            }
             bsp_display_backlight(0);
             bsp_display_power(false); // DISPOFF+SLPIN 面板真睡眠,只关背光会有内容残影
             lv_timer_t *refr = lv_display_get_refr_timer(lv_display_get_default());
             if (refr) lv_timer_pause(refr);
+            s_screen_on.store(false, std::memory_order_release);
             bsp_lvgl_unlock();
+            ESP_LOGI(TAG, "Screen blanked after %u seconds", (unsigned)timeout);
         }
-        s_screen_on.store(false, std::memory_order_release);
-        ESP_LOGI(TAG, "Screen blanked after %u seconds", (unsigned)timeout);
     }
 }
 

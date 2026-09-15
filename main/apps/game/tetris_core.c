@@ -202,6 +202,8 @@ bool tc_cur_cells(int8_t out[4][2]) {
     return true;
 }
 
+int tc_next_id(void) { return s.next + 1; }
+
 int tc_cur_id(void) { return s.phase == TC_PLAYING ? s.cur + 1 : 0; }
 
 void tc_next_cells(int8_t out[4][2]) {

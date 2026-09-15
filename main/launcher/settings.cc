@@ -1,7 +1,4 @@
-// main/launcher/settings.cc —— 系统设置(像素风)。
-//
-// 2026-09-13 全机 UI 统一:深色行卡 → 纸色行卡 + 墨描边,选中行染 UI_YELLOW,
-// 标题改纸牌(ui_font_20),底部提示改共享胶囊。行为与键位不变。
+// System settings: shared terminal rows and amber focus.
 #include "launcher/settings.h"
 
 #include "launcher/app_registry.h"
@@ -71,11 +68,12 @@ void refresh_ui() {
     if (!s_screen) return;
     for (size_t i = 0; i < kRowCount; ++i) {
         const bool selected = i == s_selected;
+        ui_pixel_set_selected(s_rows[i], selected, true);
         // 选中行染像素黄,与整机"选中=黄"语义一致
         lv_obj_set_style_bg_color(s_rows[i],
-                                  lv_color_hex(selected ? UI_YELLOW : UI_PAPER), 0);
+                                  lv_color_hex(selected ? UI_SURFACE_ALT : UI_SURFACE), 0);
         lv_obj_set_style_text_color(s_values[i],
-                                    lv_color_hex(selected ? UI_INK : UI_SKY_DARK), 0);
+                                    lv_color_hex(selected ? UI_AMBER : UI_TEXT), 0);
     }
 
     char value[20];
@@ -110,20 +108,20 @@ void create_ui() {
         lv_obj_set_style_radius(s_rows[i], 0, 0);
         lv_obj_set_style_bg_color(s_rows[i], lv_color_hex(UI_PAPER), 0);
         lv_obj_set_style_bg_opa(s_rows[i], LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(s_rows[i], 3, 0);
-        lv_obj_set_style_border_color(s_rows[i], lv_color_hex(UI_INK), 0);
+        lv_obj_set_style_border_width(s_rows[i], 1, 0);
+        lv_obj_set_style_border_color(s_rows[i], lv_color_hex(UI_BORDER), 0);
         lv_obj_set_style_pad_hor(s_rows[i], 12, 0);
         lv_obj_set_style_pad_ver(s_rows[i], 0, 0);
         lv_obj_clear_flag(s_rows[i], LV_OBJ_FLAG_SCROLLABLE);
 
-        lv_obj_t *name = ui_pixel_label(s_rows[i], labels[i], &buddy_font_16, UI_INK);
+        lv_obj_t *name = ui_pixel_label(s_rows[i], labels[i], &buddy_font_16, UI_TEXT);
         lv_obj_align(name, LV_ALIGN_LEFT_MID, 0, 0);
 
         s_values[i] = ui_pixel_label(s_rows[i], "", &buddy_font_16, UI_SKY_DARK);
         lv_obj_align(s_values[i], LV_ALIGN_RIGHT_MID, 0, 0);
     }
 
-    ui_pixel_hint_pill(s_screen, "上下选择  确定设置", &ui_font_20);
+    ui_pixel_hint_pill(s_screen, "上下选择  确定设置", &buddy_font_16);
 
     refresh_ui();
 }
@@ -202,7 +200,7 @@ void settings_bootstrap(void) {
 
 const passport_app_t g_settings_app = {
     .id = APP_ID_SETTINGS,
-    .name = "Settings",
+    .name = "设置",
     .en_name = "SETTINGS",
     .desc = "System controls",
     .tag = "DEVICE",

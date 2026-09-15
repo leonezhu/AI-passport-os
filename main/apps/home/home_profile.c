@@ -26,7 +26,7 @@ static home_profile_t s_profile;
 static uint32_t s_version = 1;
 
 static bool utf8_len_ok(const char *s, size_t cap) {
-    return s && strlen(s) < cap; /* strlen 已含结尾 0 之外的全部字节 */
+    return s && strnlen(s, cap) < cap; /* strlen 已含结尾 0 之外的全部字节 */
 }
 
 void home_profile_init(void) {

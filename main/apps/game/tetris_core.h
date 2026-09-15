@@ -45,6 +45,7 @@ bool tc_cur_cells(int8_t out[4][2]);
 
 // 当前方块颜色索引(1..7,与 tc_board 值同色系);无块返回 0。
 int tc_cur_id(void);
+int tc_next_id(void);  // 1..7, same palette index as tc_cur_id
 
 // 下一块 4 格的相对形状(0..3 范围),用于预览。
 void tc_next_cells(int8_t out[4][2]);

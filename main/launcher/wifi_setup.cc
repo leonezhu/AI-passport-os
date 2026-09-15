@@ -15,6 +15,7 @@
 #include <array>
 #include <atomic>
 #include <cstring>
+#include <cstdio>
 #include <mutex>
 #include <string>
 
@@ -30,7 +31,7 @@ enum class SetupState {
 
 constexpr std::size_t kMaxVisibleNetworks = 16;
 
-SetupState s_state = SetupState::List;
+std::atomic<SetupState> s_state{SetupState::List};
 std::atomic<bool> s_active{false};
 std::recursive_mutex s_mutex;
 
@@ -69,6 +70,7 @@ void update_keyboard_display(const char *status = nullptr) {
 
 void scan_worker(void *arg) {
     (void)arg;
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // creator has published the handle
     ESP_LOGI(TAG, "Starting Wi-Fi scan worker...");
     // 触发一次即时 Wi-Fi 扫描
     esp_wifi_scan_start(nullptr, false);
@@ -129,13 +131,16 @@ void start_scan() {
     TaskHandle_t h = nullptr;
     if (xTaskCreate(scan_worker, "wf_scan", 3584, NULL, 4, &h) != pdPASS) {
         ESP_LOGW(TAG, "scan task create failed");
+        update_list_display(false);
         return;
     }
     s_scan_task.store(h);
+    xTaskNotifyGive(h);
 }
 
 void connect_worker(void *arg) {
     (void)arg;
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // creator has published the handle
     std::string ssid;
     std::string pass;
     {
@@ -158,7 +163,8 @@ void connect_worker(void *arg) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         WifiManager::GetInstance().StopConfigAp();
         s_connect_task = nullptr;
-        app_registry_switch_to(APP_ID_LAUNCHER);
+        if (s_active.load() && app_registry_get_active() == APP_ID_WIFI)
+            app_registry_switch_to(APP_ID_LAUNCHER);
         vTaskDelete(NULL);
         return;
     }
@@ -186,9 +192,12 @@ void start_connect() {
     TaskHandle_t h = nullptr;
     if (xTaskCreate(connect_worker, "wf_conn", 4096, NULL, 5, &h) != pdPASS) {
         ESP_LOGW(TAG, "connect task create failed");
+        s_state = SetupState::Keyboard;
+        update_keyboard_display("内存不足，请重试");
         return;
     }
     s_connect_task.store(h);
+    xTaskNotifyGive(h);
 }
 
 } // namespace

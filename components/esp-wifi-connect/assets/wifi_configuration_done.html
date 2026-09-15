@@ -3,28 +3,28 @@
 <head>
     <title>WiFi Configuration</title>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes">
     <style>
         :root {
-            --bg-grad-1: #eef2ff;
-            --bg-grad-2: #e0f2fe;
-            --surface: #ffffff;
-            --border: #e2e8f0;
-            --text: #0f172a;
-            --text-muted: #64748b;
-            --success: #16a34a;
-            --shadow: 0 10px 30px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+            --bg-grad-1: #03120b;
+            --bg-grad-2: #03120b;
+            --surface: #091e14;
+            --border: #37694b;
+            --text: #a8edbb;
+            --text-muted: #80af90;
+            --success: #8cf5a6;
+            --shadow: none;
         }
         @media (prefers-color-scheme: dark) {
             :root {
-                --bg-grad-1: #0b1220;
-                --bg-grad-2: #111827;
-                --surface: #1e293b;
-                --border: #334155;
-                --text: #e2e8f0;
-                --text-muted: #94a3b8;
-                --success: #4ade80;
-                --shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+                --bg-grad-1: #03120b;
+                --bg-grad-2: #03120b;
+                --surface: #091e14;
+                --border: #37694b;
+                --text: #a8edbb;
+                --text-muted: #80af90;
+                --success: #8cf5a6;
+                --shadow: none;
             }
         }
 
@@ -32,8 +32,8 @@
         html, body { height: 100%; }
         body {
             margin: 0;
-            overflow: hidden;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: auto;
+            font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
             color: var(--text);
             background: linear-gradient(160deg, var(--bg-grad-1), var(--bg-grad-2));
         }
@@ -43,8 +43,8 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
-            max-height: 100vh;
+            min-height: 100vh;
+            max-height: none;
             padding: 24px;
         }
 
@@ -54,7 +54,7 @@
             align-items: center;
             background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 18px;
+            border-radius: 0;
             box-shadow: var(--shadow);
             padding: 40px 36px;
             max-width: 360px;
@@ -98,6 +98,11 @@
             color: var(--text-muted);
             margin: 0;
         }
+    /* Keyboard focus and reduced motion remain visible on the dark terminal. */
+        :focus-visible { outline: 2px solid #edbc73; outline-offset: 3px; }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after {
+            animation-duration: 0.01ms !important; transition-duration: 0.01ms !important;
+        } }
     </style>
 </head>
 <body>

@@ -114,8 +114,8 @@ constexpr uint32_t kDogEar = 0xAA6518;   // 褐色耳朵
 constexpr uint32_t kDogWhite = 0xFFF3D6; // 脸颊浅白
 constexpr uint32_t kMouthBg = 0x551111;  // 深暗红嘴腔
 constexpr uint32_t kTongue = 0xFF6B8B;   // 粉舌头
-constexpr uint32_t kGrass = 0x82BE2D;    // 管道主体
-constexpr uint32_t kGrassD = 0x4E7A16;   // 管道口/描边
+constexpr uint32_t kGrass = UI_ACCENT;    // 管道主体
+constexpr uint32_t kGrassD = UI_BORDER;   // 管道口/描边
 
 // ---------------------------------------------------------------------------
 // 文本缓存 —— 本次优化的核心
@@ -281,9 +281,9 @@ void build_dead_panel(lv_obj_t *parent) {
     lv_obj_t *panel = px_block(parent, 25, kPanelHiddenY, 190, 122, kPaper, 0);
     s_dead_panel = panel;
     lv_obj_set_style_border_width(panel, 3, 0);
-    lv_obj_set_style_border_color(panel, lv_color_hex(kInk), 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(UI_BORDER), 0);
 
-    lv_obj_t *title = px_label(panel, "你在狗叫什么！", &buddy_font_16, 0xD32F2F,
+    lv_obj_t *title = px_label(panel, "你在狗叫什么！", &buddy_font_16, UI_DANGER,
                                LV_TEXT_ALIGN_CENTER);
     lv_obj_set_width(title, 184);
     lv_obj_set_pos(title, 3, 10);
@@ -298,7 +298,7 @@ void build_dead_panel(lv_obj_t *parent) {
     lv_obj_set_width(s_dead_best, 184);
     lv_obj_set_pos(s_dead_best, 3, 62);
 
-    s_dead_rating = px_label(panel, "假狗·叫得太温柔", &buddy_font_16, kInk,
+    s_dead_rating = px_label(panel, "假狗·叫得太温柔", &buddy_font_16, UI_TEXT,
                              LV_TEXT_ALIGN_CENTER);
     lv_obj_set_width(s_dead_rating, 184);
     lv_obj_set_pos(s_dead_rating, 3, 90);
@@ -546,7 +546,7 @@ void playing_tick() {
         std::snprintf(text, sizeof(text), "%d", s_score_cache);
         lv_label_set_text(s_score_lbl, text);
         // 得分闪白 ~200ms:让"过了一根"这件事在余光里也能看见
-        lv_obj_set_style_text_color(s_score_lbl, lv_color_hex(UI_PAPER), 0);
+        lv_obj_set_style_text_color(s_score_lbl, lv_color_hex(UI_TEXT), 0);
         s_score_flash = kScoreFlashFrames;
         if (kSfxEnabled) game_sfx_play(GS_SCORE);
     }
@@ -650,7 +650,7 @@ void build_ui() {
     lv_obj_set_style_pad_all(s_hint_lbl, 4, 0);
     lv_obj_set_style_radius(s_hint_lbl, 0, 0);
     lv_obj_set_style_border_width(s_hint_lbl, 2, 0);
-    lv_obj_set_style_border_color(s_hint_lbl, lv_color_hex(kInk), 0);
+    lv_obj_set_style_border_color(s_hint_lbl, lv_color_hex(UI_BORDER), 0);
     lv_obj_align(s_hint_lbl, LV_ALIGN_BOTTOM_MID, 0, -6);
 
     build_dead_panel(s_screen);

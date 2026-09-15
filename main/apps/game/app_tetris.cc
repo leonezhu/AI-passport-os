@@ -44,7 +44,7 @@ constexpr uint32_t kTickMs = 50;
 
 /* 方块配色(与整机调色板同源);下标 = tc_board 值 */
 constexpr uint32_t kPieceColors[TC_PIECE_KINDS + 1] = {
-    0x18222D, /* 0 空格子底色(深暗岩灰,无眩光,与纯黑网格线形成高对比) */
+    UI_SURFACE_ALT, /* 0 空格子底色(深暗岩灰,无眩光,与纯黑网格线形成高对比) */
     0x1689E8, /* 1 I 天蓝 */
     0xFFD928, /* 2 O 黄 */
     0x7557D9, /* 3 T 紫 */
@@ -160,6 +160,8 @@ void render_all() {
 void render_next() {
     int8_t cells[4][2];
     tc_next_cells(cells);
+    for (lv_obj_t *cell : s_next_blk)
+        lv_obj_set_style_bg_color(cell, lv_color_hex(kPieceColors[tc_next_id()]), 0);
     int8_t min_x = 7, min_y = 7;
     for (int i = 0; i < 4; ++i) {
         if (cells[i][0] < min_x) min_x = cells[i][0];
@@ -306,9 +308,9 @@ void drop_board() {
 void build_oom_page() {
     s_dead_panel = block(s_screen, 24, 104, 192, 112, UI_PAPER);
     if (!s_dead_panel) return;
-    lv_obj_set_style_border_width(s_dead_panel, 3, 0);
-    lv_obj_set_style_border_color(s_dead_panel, lv_color_hex(UI_INK), 0);
-    s_dead_info = mk_label(s_dead_panel, "内存不足", &buddy_font_16, UI_INK,
+    lv_obj_set_style_border_width(s_dead_panel, 1, 0);
+    lv_obj_set_style_border_color(s_dead_panel, lv_color_hex(UI_BORDER), 0);
+    s_dead_info = mk_label(s_dead_panel, "内存不足", &buddy_font_16, UI_TEXT,
                            LV_TEXT_ALIGN_CENTER);
     lv_obj_set_width(s_dead_info, 186);
     lv_obj_set_pos(s_dead_info, 3, 30);
@@ -325,7 +327,7 @@ void build_ui() {
     ui_pixel_background(s_screen);
 
     lv_obj_t *bar = ui_pixel_top_bar(s_screen);
-    lv_obj_t *title = mk_label(bar, "俄罗斯方块", &buddy_font_16, 0xFFFFFF, LV_TEXT_ALIGN_LEFT);
+    lv_obj_t *title = mk_label(bar, "俄罗斯方块", &buddy_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT);
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 8, 0);
     s_score_lbl = mk_label(bar, "0", &lv_font_montserrat_20, UI_YELLOW, LV_TEXT_ALIGN_RIGHT);
     lv_obj_align(s_score_lbl, LV_ALIGN_RIGHT_MID, -10, 0);
@@ -359,7 +361,7 @@ void build_ui() {
     lv_obj_t *frame = block(s_screen, 5, 33, (s_field_w + 1) + 6, (s_field_h + 1) + 6, UI_PAPER);
     if (frame) lv_obj_move_to_index(frame, 0);
 
-    lv_obj_t *cap = mk_label(s_screen, "下一个", &buddy_font_16, UI_INK, LV_TEXT_ALIGN_LEFT);
+    lv_obj_t *cap = mk_label(s_screen, "下一个", &buddy_font_16, UI_TEXT, LV_TEXT_ALIGN_LEFT);
     lv_obj_set_pos(cap, s_panel_x, 36);
     for (int i = 0; i < 4; ++i)
         s_next_blk[i] = block(s_screen, s_panel_x, 58, s_cell - 1, s_cell - 1, UI_YELLOW);
@@ -391,14 +393,14 @@ void build_ui() {
     /* cell=14 后棋盘底边已到 316px,屏幕底部再无空间放提示条。改成悬浮在
        棋盘内下方(READY 时棋盘是空的,白字直接可读);DEAD 时结束面板居中,
        不会盖住这一行。 */
-    s_hint_lbl = mk_label(s_screen, "", &buddy_font_16, 0xFFFFFF, LV_TEXT_ALIGN_CENTER);
+    s_hint_lbl = mk_label(s_screen, "", &buddy_font_16, UI_TEXT, LV_TEXT_ALIGN_CENTER);
     lv_obj_set_width(s_hint_lbl, s_field_w - 16);
     lv_obj_set_pos(s_hint_lbl, 16, 36 + s_field_h - 34);
 
     s_dead_panel = block(s_screen, 24, 344, 192, 112, UI_PAPER);
-    lv_obj_set_style_border_width(s_dead_panel, 3, 0);
-    lv_obj_set_style_border_color(s_dead_panel, lv_color_hex(UI_INK), 0);
-    lv_obj_t *t = mk_label(s_dead_panel, "游戏结束", &buddy_font_16, UI_INK, LV_TEXT_ALIGN_CENTER);
+    lv_obj_set_style_border_width(s_dead_panel, 1, 0);
+    lv_obj_set_style_border_color(s_dead_panel, lv_color_hex(UI_BORDER), 0);
+    lv_obj_t *t = mk_label(s_dead_panel, "游戏结束", &buddy_font_16, UI_TEXT, LV_TEXT_ALIGN_CENTER);
     lv_obj_set_width(t, 186);
     lv_obj_set_pos(t, 3, 12);
     s_dead_info = mk_label(s_dead_panel, "", &lv_font_montserrat_20, UI_SKY_DARK, LV_TEXT_ALIGN_CENTER);

@@ -1,11 +1,8 @@
-// main/apps/xiaozhi/xiaozhi_ui.cc —— 小智AI 界面(像素风)。
-//
-// 2026-09-13 全机 UI 统一,并修复一个真实缺字问题:
-//   消息区是**服务器下发的任意文本**,原来用 radio_font(约 200 字的小子集)
-//   渲染,稍微冷门一点的字就是空白 —— 改用 buddy_font_16(4360 字全覆盖)。
+// Xiaozhi: shared terminal conversation view and bounded UTF-8 replies.
 #include "apps/xiaozhi/xiaozhi_ui.h"
 #include "bsp_display.h"
 #include "ui_pixel.h"
+#include "utf8_tail.h"
 #include "app_fonts.h"
 #include "wifi_manager.h"
 #include "lvgl.h"
@@ -17,7 +14,7 @@ namespace xiaozhi {
 namespace {
 
 // 状态点颜色:与整机状态色语义一致(墨/纸/草/黄/红/天蓝)
-constexpr uint32_t kTextMain   = UI_INK;
+constexpr uint32_t kTextMain   = UI_TEXT;
 constexpr uint32_t kTextMuted  = UI_SUB;
 constexpr uint32_t kUserBlue   = UI_SKY_DARK;
 constexpr uint32_t kGreenAccent = UI_GRASS_DARK;
@@ -36,7 +33,7 @@ lv_obj_t *s_hint_label = nullptr;
 std::string s_user_text;
 std::string s_ai_reply_buffer;
 
-constexpr size_t kMaxAiChars = 400;
+constexpr size_t kMaxTextBytes = 1200;  // up to 400 three-byte Han characters
 
 // 滚动到消息区底部，保证最新一轮对话可见
 void scroll_to_bottom_locked() {
@@ -48,7 +45,6 @@ void scroll_to_bottom_locked() {
 // 所有"改文案"的操作都走这里：先加锁、再加一次指针校验。
 // 返回 false 表示控件已销毁（应用正在退出），调用方静默丢弃即可。
 bool begin_update(uint32_t timeout_ms) {
-    if (s_screen == nullptr) return false;          // 未初始化 / 已隐藏
     if (!bsp_lvgl_lock(timeout_ms)) return false;
     if (s_screen == nullptr) {                      // 加锁期间被 ui_hide 销毁
         bsp_lvgl_unlock();
@@ -87,9 +83,9 @@ void ui_init() {
     lv_obj_align(top_bar, LV_ALIGN_TOP_MID, 0, 52);
     lv_obj_set_style_bg_color(top_bar, lv_color_hex(UI_PAPER), 0);
     lv_obj_set_style_bg_opa(top_bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(top_bar, 9, 0);
+    lv_obj_set_style_radius(top_bar, 0, 0);
     lv_obj_set_style_border_width(top_bar, 2, 0);
-    lv_obj_set_style_border_color(top_bar, lv_color_hex(UI_INK), 0);
+    lv_obj_set_style_border_color(top_bar, lv_color_hex(UI_BORDER), 0);
     lv_obj_set_style_pad_hor(top_bar, 10, 0);
     lv_obj_set_style_pad_ver(top_bar, 0, 0);
     lv_obj_clear_flag(top_bar, LV_OBJ_FLAG_SCROLLABLE);
@@ -97,7 +93,7 @@ void ui_init() {
     s_status_badge = lv_obj_create(top_bar);
     lv_obj_set_size(s_status_badge, 9, 9);
     lv_obj_align(s_status_badge, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_set_style_radius(s_status_badge, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_radius(s_status_badge, 0, 0);
     lv_obj_set_style_bg_color(s_status_badge, lv_color_hex(kAmberAccent), 0);
     lv_obj_set_style_border_width(s_status_badge, 0, 0);
 
@@ -110,24 +106,14 @@ void ui_init() {
     lv_obj_align(s_status_label, LV_ALIGN_LEFT_MID, 15, 0);
 
     // 2. 可滚动的消息区（长回复不再被裁掉）——纸面板+墨描边+硬阴影
-    lv_obj_t *shadow = lv_obj_create(s_screen);
-    lv_obj_set_size(shadow, 216, 186);
-    lv_obj_set_pos(shadow, 16, 93);
-    lv_obj_set_style_bg_color(shadow, lv_color_hex(UI_INK), 0);
-    lv_obj_set_style_bg_opa(shadow, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(shadow, 0, 0);
-    lv_obj_set_style_border_width(shadow, 0, 0);
-    lv_obj_set_style_pad_all(shadow, 0, 0);
-    lv_obj_clear_flag(shadow, LV_OBJ_FLAG_SCROLLABLE);
-
     s_msg_container = lv_obj_create(s_screen);
     lv_obj_set_size(s_msg_container, 216, 186);
     lv_obj_set_pos(s_msg_container, 12, 88);
     lv_obj_set_style_bg_color(s_msg_container, lv_color_hex(UI_PAPER), 0);
     lv_obj_set_style_bg_opa(s_msg_container, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_msg_container, 0, 0);
-    lv_obj_set_style_border_width(s_msg_container, 3, 0);
-    lv_obj_set_style_border_color(s_msg_container, lv_color_hex(UI_INK), 0);
+    lv_obj_set_style_border_width(s_msg_container, 1, 0);
+    lv_obj_set_style_border_color(s_msg_container, lv_color_hex(UI_BORDER), 0);
     lv_obj_set_style_pad_all(s_msg_container, 10, 0);
     lv_obj_set_flex_flow(s_msg_container, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_msg_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START,
@@ -151,11 +137,7 @@ void ui_init() {
     lv_label_set_text(s_ai_text_label, "小智: 短按 OK 说话，再按一下结束。");
 
     // 3. 底部按键指引(共享胶囊样式)
-    s_hint_label = lv_label_create(s_screen);
-    lv_obj_set_style_text_font(s_hint_label, &buddy_font_16, 0);
-    lv_obj_set_style_text_color(s_hint_label, lv_color_hex(0xFFFFFF), 0);
-    lv_label_set_text(s_hint_label, "OK:说话/打断  长按OK:返回");
-    lv_obj_align(s_hint_label, LV_ALIGN_BOTTOM_MID, 0, -8);
+    s_hint_label = ui_pixel_hint_pill(s_screen, "OK:说话/打断 长按:返回", &buddy_font_16);
 
     bsp_lvgl_unlock();
 }
@@ -167,7 +149,7 @@ void ui_show() {
         ui_init();
         if (!bsp_lvgl_lock(1000)) return;
     }
-    lv_screen_load(s_screen);
+    if (s_screen) lv_screen_load(s_screen);
     bsp_lvgl_unlock();
 }
 
@@ -237,7 +219,8 @@ void ui_set_status_text(const std::string &text) {
 
 void ui_set_user_text(const std::string &text) {
     if (!begin_update(200)) return;
-    s_user_text = "你说: " + text;
+    s_user_text = "你说: ";
+    passport::append_utf8_tail(s_user_text, text, kMaxTextBytes);
     lv_label_set_text(s_user_text_label, s_user_text.c_str());
     scroll_to_bottom_locked();
     bsp_lvgl_unlock();
@@ -245,7 +228,8 @@ void ui_set_user_text(const std::string &text) {
 
 void ui_set_ai_text(const std::string &text) {
     if (!begin_update(200)) return;
-    s_ai_reply_buffer = text;
+    const auto tail = passport::utf8_tail(text, kMaxTextBytes);
+    s_ai_reply_buffer.assign(tail.data(), tail.size());
     std::string display = "小智: " + s_ai_reply_buffer;
     lv_label_set_text(s_ai_text_label, display.c_str());
     scroll_to_bottom_locked();
@@ -255,11 +239,7 @@ void ui_set_ai_text(const std::string &text) {
 void ui_append_ai_text(const std::string &text) {
     if (!begin_update(200)) return;
 
-    // 内存护栏：超长回复只保留尾部，避免把堆吃光（本机堆只有 ~95KB）
-    if (s_ai_reply_buffer.size() > kMaxAiChars) {
-        s_ai_reply_buffer.erase(0, s_ai_reply_buffer.size() - kMaxAiChars / 2);
-    }
-    s_ai_reply_buffer += text;
+    passport::append_utf8_tail(s_ai_reply_buffer, text, kMaxTextBytes);
 
     std::string display = "小智: " + s_ai_reply_buffer;
     lv_label_set_text(s_ai_text_label, display.c_str());

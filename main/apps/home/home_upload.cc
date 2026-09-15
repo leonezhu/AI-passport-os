@@ -9,6 +9,9 @@
 #include <cJSON.h>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
+#include <cerrno>
+#include <climits>
 
 static const char *TAG = "home_upload";
 
@@ -24,11 +27,15 @@ static uint32_t s_token = 0;
 // 从 req->uri 的 query 里取 t= 并比对。URL 形如 /api/profile?t=123456
 static bool token_ok(httpd_req_t *req) {
     if (s_token == 0) return false;
-    const char *q = std::strchr(req->uri, '?');
-    if (!q) return false;
-    const char *p = std::strstr(q, "t=");
-    if (!p) return false;
-    return (uint32_t)std::strtoul(p + 2, nullptr, 10) == s_token;
+    char query[96], token[16];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "t", token, sizeof(token)) != ESP_OK) return false;
+    for (const char *p = token; *p; ++p) if (*p < '0' || *p > '9') return false;
+    char *end = nullptr;
+    errno = 0;
+    const unsigned long value = std::strtoul(token, &end, 10);
+    return token[0] && end && !*end && errno != ERANGE && value <= UINT32_MAX &&
+           static_cast<uint32_t>(value) == s_token;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,17 +45,17 @@ static bool token_ok(httpd_req_t *req) {
 static const char *PAGE = R"html(<!DOCTYPE html><html lang='zh'><head>
 <meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>首页配置</title><style>
-body{font-family:system-ui,sans-serif;background:#0a0f14;color:#f0f4f8;max-width:420px;margin:0 auto;padding:16px}
-h2{font-size:18px;margin:8px 0}label{display:block;font-size:13px;color:#7e92a2;margin:12px 0 4px}
-input[type=text]{width:100%;box-sizing:border-box;padding:10px;border:1px solid #22323d;border-radius:8px;background:#121b22;color:#f0f4f8;font-size:15px}
-button{margin-top:12px;width:100%;padding:12px;border:0;border-radius:10px;background:#ffb74d;color:#0a0f14;font-size:16px;font-weight:600}
-button.grey{background:#22323d;color:#f0f4f8}
-#st{margin-top:12px;font-size:13px;color:#7e92a2;min-height:18px;text-align:center;word-break:break-all}
-#vp{position:relative;width:192px;height:300px;margin:8px auto 0;overflow:hidden;background:#121b22;touch-action:none}
+body{font-family:ui-monospace,monospace;background:#03120b;color:#a8edbb;max-width:420px;margin:0 auto;padding:16px}
+h2{font-size:18px;margin:8px 0}label{display:block;font-size:13px;color:#80af90;margin:12px 0 4px}
+input[type=text]{width:100%;box-sizing:border-box;padding:10px;border:1px solid #37694b;border-radius:0;background:#091e14;color:#a8edbb;font-size:15px}
+button{margin-top:12px;width:100%;padding:12px;border:0;border-radius:0;background:#edbc73;color:#03120b;font-size:16px;font-weight:600}
+button.grey{background:#37694b;color:#a8edbb}
+#st{margin-top:12px;font-size:13px;color:#80af90;min-height:18px;text-align:center;word-break:break-all}
+#vp{position:relative;width:192px;height:300px;margin:8px auto 0;overflow:hidden;background:#091e14;touch-action:none}
 #pv{position:absolute;left:0;top:0;pointer-events:none;user-select:none;-webkit-user-drag:none}
 #zm{display:block;width:192px;margin:6px auto 0}
 #binc{display:block;margin:6px auto 0;width:96px;height:150px;background:#03120b;image-rendering:pixelated}
-#cap{margin:4px 0 0;font-size:12px;color:#7e92a2;text-align:center}
+#cap{margin:4px 0 0;font-size:12px;color:#80af90;text-align:center}
 </style></head><body>
 <h2>AI 护照 · 首页配置</h2>
 <label>姓名</label><input type='text' id='name' maxlength='9'>
@@ -67,6 +74,7 @@ button.grey{background:#22323d;color:#f0f4f8}
 <script>
 const $=i=>document.getElementById(i);const st=t=>{$('st').textContent=t};
 let lat='',lon='';
+$('city').oninput=()=>{lat='';lon=''};
 async function load(){try{const r=await fetch('/api/profile?t='+window.__T);const j=await r.json();
 $('name').value=j.name||'';$('sig').value=j.signature||'';$('city').value=j.city||'';
 lat=j.lat||'';lon=j.lon||'';
@@ -128,7 +136,7 @@ st(r.ok?'人像已更新 ✓ 设备上按上键刷新查看':'上传失败('+r.s
 $('save').onclick=async()=>{const c=$('city').value.trim();
 if(c&&!lat){st('城市尚未定位,请先点"定位城市"');return}
 st('保存中…');try{
-const r=await fetch('/api/profile',{method:'POST',headers:{'Content-Type':'application/json'},
+const r=await fetch('/api/profile?t='+window.__T,{method:'POST',headers:{'Content-Type':'application/json'},
 body:JSON.stringify({name:$('name').value,signature:$('sig').value,city:c,lat:lat,lon:lon})});
 if(r.ok){st('已保存 ✓')}else{st('保存失败('+r.status+',内容可能超长)')}}catch(e){st('保存失败')}}
 load();
@@ -140,7 +148,8 @@ load();
 
 static esp_err_t send_json(httpd_req_t *req, int status, const char *json) {
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_set_status(req, status == 200 ? "200 OK" : "400 Bad Request");
+    httpd_resp_set_status(req, status == 200 ? "200 OK" :
+                              status == 401 ? "401 Unauthorized" : "400 Bad Request");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
@@ -201,15 +210,17 @@ static esp_err_t handler_profile_post(httpd_req_t *req) {
     const auto grab = [&](const char *key, char *dst, size_t cap) {
         const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
         const char *value = cJSON_IsString(item) ? item->valuestring : "";
-        strncpy(dst, value, cap - 1);
-        dst[cap - 1] = '\0';
+        if (std::strlen(value) >= cap) return false;
+        std::memcpy(dst, value, std::strlen(value) + 1);
+        return true;
     };
-    grab("name", in.name, HOME_NAME_MAX);
-    grab("signature", in.signature, HOME_SIGNATURE_MAX);
-    grab("city", in.city, HOME_CITY_MAX);
-    grab("lat", in.lat, HOME_COORD_MAX);
-    grab("lon", in.lon, HOME_COORD_MAX);
+    const bool valid = grab("name", in.name, HOME_NAME_MAX) &&
+        grab("signature", in.signature, HOME_SIGNATURE_MAX) &&
+        grab("city", in.city, HOME_CITY_MAX) &&
+        grab("lat", in.lat, HOME_COORD_MAX) &&
+        grab("lon", in.lon, HOME_COORD_MAX);
     cJSON_Delete(root);
+    if (!valid) return send_json(req, 400, "{\"error\":\"text too long\"}");
 
     esp_err_t err = home_profile_set_text(&in);
     return send_json(req, err == ESP_OK ? 200 : 400,
@@ -217,6 +228,7 @@ static esp_err_t handler_profile_post(httpd_req_t *req) {
 }
 
 static esp_err_t handler_avatar_post(httpd_req_t *req) {
+    if (!token_ok(req)) return send_json(req, 401, "{\"error\":\"unauthorized\"}");
     if ((size_t)req->content_len != HOME_AVATAR_BYTES) {
         ESP_LOGW(TAG, "Avatar upload wrong content-length %d", (int)req->content_len);
         return send_json(req, 400, "{\"error\":\"size\"}");
@@ -228,7 +240,7 @@ static esp_err_t handler_avatar_post(httpd_req_t *req) {
     size_t remaining = HOME_AVATAR_BYTES;
     bool first = true;
     while (remaining > 0) {
-        int n = httpd_req_recv(req, chunk, sizeof(chunk));
+        int n = httpd_req_recv(req, chunk, remaining < sizeof(chunk) ? remaining : sizeof(chunk));
         if (n <= 0) {
             ESP_LOGW(TAG, "Avatar recv aborted at %u", (unsigned)(HOME_AVATAR_BYTES - remaining));
             return send_json(req, 400, "{\"error\":\"recv\"}");
@@ -288,6 +300,10 @@ esp_err_t home_upload_start(void) {
         esp_err_t e = httpd_register_uri_handler(s_server, r.uri);
         if (e != ESP_OK) {
             ESP_LOGE(TAG, "register %s failed: %s", r.name, esp_err_to_name(e));
+            httpd_stop(s_server);
+            s_server = nullptr;
+            s_token = 0;
+            return e;
         }
     }
 

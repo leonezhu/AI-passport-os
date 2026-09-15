@@ -13,6 +13,7 @@
 #include "lvgl.h"
 #include "src/libs/tjpgd/tjpgd.h"
 #include "radio_font.h"
+#include "app_fonts.h"
 #include "ui_pixel.h"
 #include "apps/home/home_clock.h"
 
@@ -28,14 +29,14 @@ namespace {
 
 // 2026-09-13 深夜:应用户要求换回"夜间座舱"深色主题(天空蓝+纸面板观感杂乱)。
 // 全部颜色走下面常量,换主题只动这里;琥珀强调是收音机的"电台橙"。
-constexpr uint32_t kBackground = 0x0B1218;   // 深夜蓝黑底
-constexpr uint32_t kPanel = 0x141D26;        // 面板
-constexpr uint32_t kPanelSoft = 0x1B2733;    // 次级面板(电平条/音量条底)
-constexpr uint32_t kGrid = 0x2A3B4A;         // 刻度/描边
-constexpr uint32_t kText = 0xE8F0F6;         // 主文字(冷白)
-constexpr uint32_t kMuted = 0x6E8296;        // 次级文字
-constexpr uint32_t kAmber = 0xFFB23E;        // 琥珀强调(指针/频率/CH 号)
-constexpr uint32_t kAmberSoft = 0xFFD928;    // 亮琥珀(选中)
+constexpr uint32_t kBackground = UI_BG;   // 深夜蓝黑底
+constexpr uint32_t kPanel = UI_SURFACE;        // 面板
+constexpr uint32_t kPanelSoft = UI_SURFACE_ALT;    // 次级面板(电平条/音量条底)
+constexpr uint32_t kGrid = UI_BORDER;         // 刻度/描边
+constexpr uint32_t kText = UI_TEXT;         // 主文字(冷白)
+constexpr uint32_t kMuted = UI_TEXT_DIM;        // 次级文字
+constexpr uint32_t kAmber = UI_AMBER;        // 琥珀强调(指针/频率/CH 号)
+constexpr uint32_t kAmberSoft = UI_SURFACE_ALT;    // 亮琥珀(选中)
 constexpr uint32_t kGreen = UI_GRASS;
 constexpr uint32_t kRed = UI_RED;
 
@@ -278,7 +279,12 @@ lv_obj_t *make_box(lv_obj_t *parent, int x, int y, int width, int height,
     lv_obj_set_size(object, width, height);
     lv_obj_set_style_bg_color(object, lv_color_hex(color), 0);
     lv_obj_set_style_bg_opa(object, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(object, radius, 0);
+    (void)radius;
+    lv_obj_set_style_radius(object, 0, 0);
+    if (color == UI_SURFACE || color == UI_SURFACE_ALT) {
+        lv_obj_set_style_border_width(object, 1, 0);
+        lv_obj_set_style_border_color(object, lv_color_hex(UI_BORDER), 0);
+    }
     // Radio 主界面对象较多；在单核 ESP32-C3 上分批让出 CPU，避免一次完整
     // 构建连续占用超过任务看门狗窗口。LVGL 锁仍保持，其他任务不会改 UI。
     vTaskDelay(1);
@@ -474,12 +480,12 @@ void build_main() {
 
     // 顶栏(墨,26px):与 Launcher/首页 同款骨架 —— 共享 Wi-Fi 格 + 电池图形,
     // 时钟居中(收音机特有信息保留)。
-    make_box(s_main_group, 0, 0, 240, 26, 0x060B10);   // 顶栏:比底更深的黑条
+    make_box(s_main_group, 0, 0, 240, 26, UI_SURFACE);   // 顶栏:比底更深的黑条
     ui_pixel_wifi_bars_create(s_main_group, 12, 20, s_wifi_bars);
-    s_clock = make_label(s_main_group, "--:--", 84, 3, 72, 0xFFFFFF,
+    s_clock = make_label(s_main_group, "--:--", 84, 3, 72, UI_TEXT,
                          &lv_font_montserrat_20);
     lv_obj_set_style_text_align(s_clock, LV_TEXT_ALIGN_CENTER, 0);
-    s_battery = ui_pixel_battery_create(s_main_group, 206, 6, 0xFFFFFF,
+    s_battery = ui_pixel_battery_create(s_main_group, 206, 6, UI_TEXT,
                                         &lv_font_montserrat_14);
 
     s_station_number = make_label(s_main_group, "CH 01 / 06", 13, 48, 102, kAmber,
@@ -545,7 +551,7 @@ void build_main() {
     s_status = make_label(s_main_group, "准备播放", 39, 260, 187, kText);
     make_taskbar(s_main_group);
     lv_obj_t *hint = make_label(s_main_group, "上下换台  OK播放  长按返回",
-                                12, 291, 216, 0xFFFFFF);
+                                12, 291, 216, UI_TEXT);
     set_centered(hint);
 
     apply_network();
@@ -594,13 +600,13 @@ void build_config(const char *ssid, const char *url) {
     hint = make_label(s_screen, "请选择 2.4G 无线网络", 12, 259, 216, kText);
     make_taskbar(s_screen);
     set_centered(hint);
-    hint = make_label(s_screen, "配网完成后会自动开始播放", 12, 291, 216, 0xFFFFFF);
+    hint = make_label(s_screen, "配网完成后会自动开始播放", 12, 291, 216, UI_TEXT);
     set_centered(hint);
 }
 
 const lv_font_t *ssid_font(const char *ssid) {
     (void)ssid;
-    return &radio_font;
+    return &buddy_font_16;
 }
 
 void reset_transient_objects(Page page) {
@@ -644,6 +650,7 @@ void apply_settings_selection() {
     for (std::size_t i = 0; i < s_settings_row_count; ++i) {
         if (!s_settings_rows[i] || !s_settings_labels[i]) continue;
         const bool active = i == s_settings_selected;
+        ui_pixel_set_selected(s_settings_rows[i], active, true);
         lv_obj_set_style_bg_color(s_settings_rows[i],
                                   lv_color_hex(active ? kAmberSoft : kPanel), 0);
         lv_obj_set_style_text_color(s_settings_labels[i],
@@ -671,11 +678,11 @@ void build_settings(RadioSettingsPage page, std::size_t selected, uint8_t volume
         lv_bar_set_range(s_volume_bar, 0, 100);
         lv_obj_set_style_bg_color(s_volume_bar, lv_color_hex(kGrid), LV_PART_MAIN);
         lv_obj_set_style_bg_color(s_volume_bar, lv_color_hex(kAmber), LV_PART_INDICATOR);
-        lv_obj_set_style_radius(s_volume_bar, 7, LV_PART_MAIN);
-        lv_obj_set_style_radius(s_volume_bar, 7, LV_PART_INDICATOR);
+        lv_obj_set_style_radius(s_volume_bar, 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(s_volume_bar, 0, LV_PART_INDICATOR);
         make_taskbar(s_screen);
         lv_obj_t *hint = make_label(s_screen, "上下调节  确定返回",
-                                    12, 291, 216, 0xFFFFFF);
+                                    12, 291, 216, UI_TEXT);
         set_centered(hint);
         apply_volume();
         return;
@@ -769,7 +776,7 @@ void build_settings(RadioSettingsPage page, std::size_t selected, uint8_t volume
     }
     apply_settings_selection();
     make_taskbar(s_screen);
-    lv_obj_t *hint = make_label(s_screen, hint_text, 12, 291, 216, 0xFFFFFF);
+    lv_obj_t *hint = make_label(s_screen, hint_text, 12, 291, 216, UI_TEXT);
     set_centered(hint);
 }
 
@@ -799,14 +806,15 @@ void build_saved_wifi(const char *const *ssids, std::size_t count,
         const int y = 67 + static_cast<int>(row) * 34;
         s_settings_rows[row] = make_box(s_screen, 18, y, 204, 29,
                                         active ? kAmberSoft : kPanel, 5);
+        ui_pixel_set_selected(s_settings_rows[row], active, true);
         const char *text = index < count ? ssids[index] : "返回";
         s_settings_labels[row] = make_label(
-            s_settings_rows[row], text, 8, 6, 188, active ? kText : kMuted,
+            s_settings_rows[row], text, 8, 6, 188, active ? UI_AMBER : kMuted,
             index < count ? ssid_font(text) : &radio_font);
         set_centered(s_settings_labels[row]);
     }
     make_taskbar(s_screen);
-    lv_obj_t *hint = make_label(s_screen, "长按确定返回", 12, 291, 216, 0xFFFFFF);
+    lv_obj_t *hint = make_label(s_screen, "长按确定返回", 12, 291, 216, UI_TEXT);
     set_centered(hint);
 }
 
@@ -831,7 +839,7 @@ void build_wifi_action(const char *ssid, std::size_t selected) {
     }
     apply_settings_selection();
     make_taskbar(s_screen);
-    lv_obj_t *hint = make_label(s_screen, "长按确定返回", 12, 291, 216, 0xFFFFFF);
+    lv_obj_t *hint = make_label(s_screen, "长按确定返回", 12, 291, 216, UI_TEXT);
     set_centered(hint);
 }
 
@@ -869,7 +877,7 @@ void build_easter_egg(const char *message) {
                                   12, 146, 216, kText);
     set_centered(s_easter_message);
     make_taskbar(s_screen);
-    lv_obj_t *hint = make_label(s_screen, "确定返回", 12, 291, 216, 0xFFFFFF);
+    lv_obj_t *hint = make_label(s_screen, "确定返回", 12, 291, 216, UI_TEXT);
     set_centered(hint);
 }
 
@@ -895,6 +903,7 @@ void update_wifi_list(const WifiNetworkView *networks, std::size_t count,
         const std::size_t index = first + row;
         const bool present = index < count;
         const bool active = present && index == selected;
+        ui_pixel_set_selected(s_wifi_row_box[row], active, true);
         lv_obj_set_style_bg_color(s_wifi_row_box[row],
                                   lv_color_hex(active ? kAmberSoft : kPanel), 0);
         if (!present) {
@@ -905,7 +914,7 @@ void update_wifi_list(const WifiNetworkView *networks, std::size_t count,
             continue;
         }
 
-        const uint32_t color = active ? kText : kMuted;
+        const uint32_t color = active ? UI_AMBER : kMuted;
         char ssid_disp[34 + 2];
         std::snprintf(ssid_disp, sizeof(ssid_disp), "%s%s",
                       networks[index].secure ? "*" : "", networks[index].ssid);
@@ -949,7 +958,7 @@ void build_wifi_list(const WifiNetworkView *networks, std::size_t count,
     }
 
     make_taskbar(s_screen);
-    s_wifi_list_hint = make_label(s_screen, "", 12, 285, 216, 0xFFFFFF);
+    s_wifi_list_hint = make_label(s_screen, "", 12, 285, 216, UI_TEXT);
     set_centered(s_wifi_list_hint);
     char portal[64];
     std::snprintf(portal, sizeof(portal), "WEB: %s",
@@ -982,6 +991,7 @@ void update_wifi_keyboard(const char *ssid, std::size_t password_length,
         }
         lv_obj_remove_flag(s_wifi_key_box[i], LV_OBJ_FLAG_HIDDEN);
         const bool active = i == selected;
+        ui_pixel_set_selected(s_wifi_key_box[i], active, true);
         lv_obj_set_style_bg_color(s_wifi_key_box[i],
                                   lv_color_hex(active ? kAmberSoft : kPanelSoft), 0);
         lv_label_set_text(s_wifi_key_label[i], radio_ui_wifi_key(page, i));
@@ -992,7 +1002,7 @@ void update_wifi_keyboard(const char *ssid, std::size_t password_length,
     lv_label_set_text(s_wifi_keyboard_status,
                       status && status[0] ? status : "+/-移动  OK输入  长按OK返回");
     lv_obj_set_style_text_color(s_wifi_keyboard_status,
-                                lv_color_hex(status && status[0] ? kRed : 0xFFFFFF), 0);
+                                lv_color_hex(status && status[0] ? kRed : UI_TEXT), 0);
 }
 
 void build_wifi_keyboard(const char *ssid, std::size_t password_length,
@@ -1022,13 +1032,13 @@ void build_wifi_keyboard(const char *ssid, std::size_t password_length,
         lv_obj_set_size(s_wifi_key_label[i], 31, 24);
         lv_obj_set_style_bg_color(s_wifi_key_label[i], lv_color_hex(kPanelSoft), 0);
         lv_obj_set_style_bg_opa(s_wifi_key_label[i], LV_OPA_COVER, 0);
-        lv_obj_set_style_radius(s_wifi_key_label[i], 4, 0);
+        lv_obj_set_style_radius(s_wifi_key_label[i], 0, 0);
         lv_obj_set_style_pad_top(s_wifi_key_label[i], 4, 0);
         set_centered(s_wifi_key_label[i]);
     }
 
     make_taskbar(s_screen);
-    s_wifi_keyboard_status = make_label(s_screen, "", 12, 285, 216, 0xFFFFFF);
+    s_wifi_keyboard_status = make_label(s_screen, "", 12, 285, 216, UI_TEXT);
     set_centered(s_wifi_keyboard_status);
     lv_obj_t *hint = make_label(s_screen, "+前进 -后退  长按跳行", 12, 303, 216, UI_MUTED);
     set_centered(hint);

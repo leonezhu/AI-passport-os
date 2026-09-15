@@ -1,16 +1,4 @@
-// main/apps/voice/app_ui.c —— AI随身语音 界面(中文 · 复古像素纸卡风)。见 app_ui.h。
-//
-// 视觉规范:
-//   1. 严格遵照 ui_pixel 设计系统:卡片=纸底(UI_PAPER)+墨描边(3~4px)+右下错位硬阴影;
-//      标题=纸质标题牌(ui_pixel_title_plate);全套方角(radius 0),杜绝现代圆角药丸。
-//   2. 核心动态亮点:
-//      - 正在聆听(LISTENING):5 柱跳动像素声波柱(随音量平方实时起伏)+ 紧凑 REC 计时徽章;
-//      - 就绪与主页:纯像素复古金属对讲麦克风微标(带广播波纹);
-//      - 语音完成(TRANSCRIBING):像素双打勾(✓✓)+ 送达电脑提示与下键回车操作指引。
-//   3. 字体策略:
-//      - 静态标题/提示 → voice_font_20(20px 反锯齿中文);
-//      - 动态转写/正文/状态 → buddy_font_16(4360 汉字全覆盖,抗锯齿);
-//      - 计时/电池/时间 → Montserrat 14。
+// Voice pages: shared terminal frames, readable text and live audio meters.
 #include "app_ui.h"
 #include "app_fonts.h"       // buddy_font_16 / voice_font_20
 #include "audio_streamer.h"  // 录音时实时音量:audio_streamer_peak(0..32767)
@@ -33,7 +21,7 @@
 #define BAR_H        26    // 顶栏高
 #define BANNER_Y     28    // 悬浮横幅起点
 #define BANNER_H     24
-#define CONTENT_Y    50    // 内容区起点
+#define CONTENT_Y    70    // 内容区起点
 #define HINT_Y       292   // 底部提示行
 
 // 顶栏元素坐标
@@ -41,7 +29,7 @@
 #define ST_DOT_Y     10
 #define ST_DOT_S     6
 #define ST_TXT_X     24
-#define TIME_X       140
+#define TIME_X       100
 
 // ---- 中文文案(已包含在 voice_font_20 字符集中) ----
 static const char *const T_LINK_ON    = "已连接";
@@ -139,38 +127,38 @@ static lv_obj_t *page_root(page_t *p)
 static void mic_icon(lv_obj_t *parent, int cx, int cy)
 {
     // 话筒网罩(墨框 + 银灰网面 + 细条纹)
-    block(parent, cx - 10, cy - 22, 20, 24, UI_INK);
-    block(parent, cx - 8, cy - 20, 16, 20, 0xC8D8E6);
-    block(parent, cx - 8, cy - 14, 16, 2, UI_INK);
-    block(parent, cx - 8, cy - 8, 16, 2, UI_INK);
-    block(parent, cx - 2, cy - 20, 4, 20, UI_INK);
+    block(parent, cx - 10, cy - 22, 20, 24, UI_BORDER);
+    block(parent, cx - 8, cy - 20, 16, 20, UI_ACCENT);
+    block(parent, cx - 8, cy - 14, 16, 2, UI_BORDER);
+    block(parent, cx - 8, cy - 8, 16, 2, UI_BORDER);
+    block(parent, cx - 2, cy - 20, 4, 20, UI_BORDER);
 
     // U 型金属托架
-    block(parent, cx - 15, cy - 8, 3, 16, UI_INK);
-    block(parent, cx + 12, cy - 8, 3, 16, UI_INK);
-    block(parent, cx - 15, cy + 8, 30, 3, UI_INK);
+    block(parent, cx - 15, cy - 8, 3, 16, UI_BORDER);
+    block(parent, cx + 12, cy - 8, 3, 16, UI_BORDER);
+    block(parent, cx - 15, cy + 8, 30, 3, UI_BORDER);
 
     // 立杆与底座
-    block(parent, cx - 2, cy + 11, 4, 8, UI_INK);
-    block(parent, cx - 12, cy + 19, 24, 4, UI_INK);
+    block(parent, cx - 2, cy + 11, 4, 8, UI_BORDER);
+    block(parent, cx - 12, cy + 19, 24, 4, UI_BORDER);
 
     // 双侧扩散声波微弧(左/右各 2 弧)
     block(parent, cx - 21, cy - 15, 3, 10, UI_SKY_DARK);
-    block(parent, cx - 27, cy - 19, 3, 18, 0x6FB7F5);
+    block(parent, cx - 27, cy - 19, 3, 18, UI_TEXT_DIM);
     block(parent, cx + 18, cy - 15, 3, 10, UI_SKY_DARK);
-    block(parent, cx + 24, cy - 19, 3, 18, 0x6FB7F5);
+    block(parent, cx + 24, cy - 19, 3, 18, UI_TEXT_DIM);
 }
 
 // ---- 微插画 2:像素双打勾(成功送达图标, cx, cy 为右下交界) ----
 static void check_icon(lv_obj_t *parent, int cx, int cy)
 {
     // 墨色阴影底
-    block(parent, cx - 15, cy + 3, 5, 5, UI_INK);
-    block(parent, cx - 11, cy + 7, 5, 5, UI_INK);
-    block(parent, cx - 7,  cy + 3, 5, 5, UI_INK);
-    block(parent, cx - 3,  cy - 2, 5, 5, UI_INK);
-    block(parent, cx + 1,  cy - 7, 5, 5, UI_INK);
-    block(parent, cx + 5,  cy - 12, 5, 5, UI_INK);
+    block(parent, cx - 15, cy + 3, 5, 5, UI_BORDER);
+    block(parent, cx - 11, cy + 7, 5, 5, UI_BORDER);
+    block(parent, cx - 7,  cy + 3, 5, 5, UI_BORDER);
+    block(parent, cx - 3,  cy - 2, 5, 5, UI_BORDER);
+    block(parent, cx + 1,  cy - 7, 5, 5, UI_BORDER);
+    block(parent, cx + 5,  cy - 12, 5, 5, UI_BORDER);
 
     // 鲜绿色第 1 勾
     block(parent, cx - 16, cy + 2, 4, 4, UI_GRASS);
@@ -214,32 +202,32 @@ static void build_chrome(void)
 
     // 左:链路状态(6x6 像素方块 + 中文)
     s_link_dot = block(bar, ST_DOT_X, ST_DOT_Y, ST_DOT_S, ST_DOT_S, UI_GRASS);
-    s_link_text = mk_label(bar, T_LINK_ON, &buddy_font_16, 0xFFFFFF);
+    s_link_text = mk_label(bar, T_LINK_ON, &buddy_font_16, UI_TEXT);
     lv_obj_align(s_link_text, LV_ALIGN_LEFT_MID, ST_TXT_X, 0);
 
     // 右:共享像素电池 + 本地时间
-    s_batt = ui_pixel_battery_create(bar, 206, 6, 0xFFFFFF, &lv_font_montserrat_14);
-    s_time_label = mk_label(bar, "--:--", &lv_font_montserrat_14, 0xFFFFFF);
+    s_batt = ui_pixel_battery_create(bar, 206, 6, UI_TEXT, &lv_font_montserrat_14);
+    s_time_label = mk_label(bar, "--:--", &lv_font_montserrat_14, UI_TEXT);
     lv_obj_align(s_time_label, LV_ALIGN_LEFT_MID, TIME_X, 0);
 
     // 悬浮断链提示纸条(浅红底 + 墨框 + 居中)
-    s_offline_banner = block(s_chrome, 16, BANNER_Y, 208, BANNER_H, 0xFFEAEA);
+    s_offline_banner = block(s_chrome, 16, BANNER_Y, 208, BANNER_H, UI_SURFACE_ALT);
     lv_obj_set_style_border_width(s_offline_banner, 2, 0);
-    lv_obj_set_style_border_color(s_offline_banner, lv_color_hex(UI_INK), 0);
+    lv_obj_set_style_border_color(s_offline_banner, lv_color_hex(UI_BORDER), 0);
     s_offline_text = mk_label(s_offline_banner, T_OFFLINE, &buddy_font_16, UI_RED);
     lv_obj_center(s_offline_text);
 
     // 悬浮拥塞提示纸条(浅黄底 + 墨框)
-    s_netbusy_banner = block(s_chrome, 16, BANNER_Y, 208, BANNER_H, 0xFFFBEA);
+    s_netbusy_banner = block(s_chrome, 16, BANNER_Y, 208, BANNER_H, UI_SURFACE_ALT);
     lv_obj_set_style_border_width(s_netbusy_banner, 2, 0);
-    lv_obj_set_style_border_color(s_netbusy_banner, lv_color_hex(UI_INK), 0);
-    s_netbusy_text = mk_label(s_netbusy_banner, T_BUSY, &buddy_font_16, UI_INK);
+    lv_obj_set_style_border_color(s_netbusy_banner, lv_color_hex(UI_BORDER), 0);
+    s_netbusy_text = mk_label(s_netbusy_banner, T_BUSY, &buddy_font_16, UI_TEXT);
     lv_obj_center(s_netbusy_text);
 
     // Toast 浮动提示
     lv_obj_t *tbg = block(s_chrome, 16, 246, 208, 30, UI_PAPER);
     lv_obj_set_style_border_width(tbg, 2, 0);
-    lv_obj_set_style_border_color(tbg, lv_color_hex(UI_INK), 0);
+    lv_obj_set_style_border_color(tbg, lv_color_hex(UI_BORDER), 0);
     s_toast = mk_label(tbg, "", &buddy_font_16, UI_RED);
     lv_obj_center(s_toast);
 }
@@ -251,13 +239,13 @@ static void build_home(void)
     page_t *p = &s_pages[APP_ST_HOME];
     lv_obj_t *r = page_root(p);
 
-    ui_pixel_title_plate(r, 10, "随身 AI 语音", &voice_font_20);
+    ui_pixel_title_plate(r, 30, "随身 AI 语音", &voice_font_20);
 
     lv_obj_t *card = ui_pixel_panel_create(r, 16, CONTENT_Y, 208, 180, UI_PAPER);
 
     mic_icon(card, 104, 38);
 
-    lv_obj_t *t_main = mk_label(card, "按住上键说话", &voice_font_20, UI_INK);
+    lv_obj_t *t_main = mk_label(card, "按住上键说话", &voice_font_20, UI_TEXT);
     lv_obj_align(t_main, LV_ALIGN_TOP_MID, 0, 72);
 
     lv_obj_t *t_sub = mk_label(card, "文字实时飞入电脑光标", &buddy_font_16, UI_SUB);
@@ -265,8 +253,8 @@ static void build_home(void)
 
     lv_obj_t *btn = block(card, 24, 134, 160, 30, UI_YELLOW);
     lv_obj_set_style_border_width(btn, 2, 0);
-    lv_obj_set_style_border_color(btn, lv_color_hex(UI_INK), 0);
-    lv_obj_t *start = mk_label(btn, "按 确定 进入", &voice_font_20, UI_INK);
+    lv_obj_set_style_border_color(btn, lv_color_hex(UI_BORDER), 0);
+    lv_obj_t *start = mk_label(btn, "按 确定 进入", &voice_font_20, UI_ON_ACCENT);
     lv_obj_center(start);
 
     ui_pixel_hint_pill(r, T_HINT_HOME, &buddy_font_16);
@@ -277,21 +265,21 @@ static void build_ready(void)
     page_t *p = &s_pages[APP_ST_READY];
     lv_obj_t *r = page_root(p);
 
-    ui_pixel_title_plate(r, 10, "准备就绪", &voice_font_20);
+    ui_pixel_title_plate(r, 30, "准备就绪", &voice_font_20);
 
     lv_obj_t *card = ui_pixel_panel_create(r, 16, CONTENT_Y, 208, 180, UI_PAPER);
 
     mic_icon(card, 104, 38);
 
-    lv_obj_t *t_main = mk_label(card, "按住 上键 说话", &voice_font_20, UI_INK);
+    lv_obj_t *t_main = mk_label(card, "按住 上键 说话", &voice_font_20, UI_TEXT);
     lv_obj_align(t_main, LV_ALIGN_TOP_MID, 0, 74);
 
     lv_obj_t *t_sub = mk_label(card, "松开上键即完成输入", &buddy_font_16, UI_SUB);
     lv_obj_align(t_sub, LV_ALIGN_TOP_MID, 0, 104);
 
-    lv_obj_t *badge = block(card, 34, 134, 140, 26, 0xDEEED6);
+    lv_obj_t *badge = block(card, 34, 134, 140, 26, UI_SURFACE_ALT);
     lv_obj_set_style_border_width(badge, 2, 0);
-    lv_obj_set_style_border_color(badge, lv_color_hex(UI_INK), 0);
+    lv_obj_set_style_border_color(badge, lv_color_hex(UI_BORDER), 0);
     lv_obj_t *b_txt = mk_label(badge, "[ 随时说话就绪 ]", &buddy_font_16, UI_GRASS_DARK);
     lv_obj_center(b_txt);
 
@@ -303,14 +291,14 @@ static void build_listening(void)
     page_t *p = &s_pages[APP_ST_LISTENING];
     lv_obj_t *r = page_root(p);
 
-    ui_pixel_title_plate(r, 10, "正在聆听...", &voice_font_20);
+    ui_pixel_title_plate(r, 30, "正在聆听...", &voice_font_20);
 
     lv_obj_t *card = ui_pixel_panel_create(r, 16, CONTENT_Y, 208, 184, UI_PAPER);
 
     // 录音状态微徽章:REC 00:00
     lv_obj_t *rec_badge = block(card, 54, 8, 100, 22, UI_INK);
     block(rec_badge, 8, 8, 6, 6, UI_RED);
-    p->rec_elapsed = mk_label(rec_badge, "REC 00:00", &lv_font_montserrat_14, 0xFFFFFF);
+    p->rec_elapsed = mk_label(rec_badge, "REC 00:00", &lv_font_montserrat_14, UI_TEXT);
     lv_obj_align(p->rec_elapsed, LV_ALIGN_LEFT_MID, 22, 0);
 
     // 5 柱动态跳动像素声波柱(横向居中对齐,各宽 18px, 间距 8px)
@@ -321,8 +309,8 @@ static void build_listening(void)
         lv_obj_set_style_radius(bar, 0, 0);
         lv_obj_set_style_radius(bar, 0, LV_PART_INDICATOR);
         lv_obj_set_style_border_width(bar, 2, 0);
-        lv_obj_set_style_border_color(bar, lv_color_hex(UI_INK), 0);
-        lv_obj_set_style_bg_color(bar, lv_color_hex(0xE2E5D8), 0);
+        lv_obj_set_style_border_color(bar, lv_color_hex(UI_BORDER), 0);
+        lv_obj_set_style_bg_color(bar, lv_color_hex(UI_SURFACE_ALT), 0);
         lv_obj_set_style_bg_color(bar, lv_color_hex(UI_GRASS), LV_PART_INDICATOR);
         lv_bar_set_range(bar, 0, 100);
         lv_bar_set_value(bar, 10, LV_ANIM_OFF);
@@ -330,7 +318,7 @@ static void build_listening(void)
     }
 
     // 分割线
-    block(card, 14, 84, 180, 2, 0xD4D8C8);
+    block(card, 14, 84, 180, 2, UI_BORDER);
 
     // 实时转写文字区
     p->live_text = mk_label(card, "对准麦克风说话...", &buddy_font_16, UI_SUB);
@@ -346,22 +334,22 @@ static void build_transcribing(void)
     page_t *p = &s_pages[APP_ST_TRANSCRIBING];
     lv_obj_t *r = page_root(p);
 
-    ui_pixel_title_plate(r, 10, "语音完成", &voice_font_20);
+    ui_pixel_title_plate(r, 30, "语音完成", &voice_font_20);
 
     lv_obj_t *card = ui_pixel_panel_create(r, 16, CONTENT_Y, 208, 180, UI_PAPER);
 
     check_icon(card, 104, 32);
 
-    lv_obj_t *done = mk_label(card, "文字已送达电脑", &voice_font_20, UI_INK);
+    lv_obj_t *done = mk_label(card, "文字已送达电脑", &voice_font_20, UI_TEXT);
     lv_obj_align(done, LV_ALIGN_TOP_MID, 0, 62);
 
-    block(card, 14, 96, 180, 2, 0xD4D8C8);
+    block(card, 14, 96, 180, 2, UI_BORDER);
 
-    lv_obj_t *opt_box = block(card, 14, 106, 180, 56, 0xEEF2E6);
+    lv_obj_t *opt_box = block(card, 14, 106, 180, 56, UI_SURFACE_ALT);
     lv_obj_set_style_border_width(opt_box, 2, 0);
-    lv_obj_set_style_border_color(opt_box, lv_color_hex(UI_INK), 0);
+    lv_obj_set_style_border_color(opt_box, lv_color_hex(UI_BORDER), 0);
 
-    lv_obj_t *t1 = mk_label(opt_box, "按下键: 确认发送 (Enter)", &buddy_font_16, UI_INK);
+    lv_obj_t *t1 = mk_label(opt_box, "按下键: 确认发送 (Enter)", &buddy_font_16, UI_TEXT);
     lv_obj_align(t1, LV_ALIGN_TOP_MID, 0, 8);
 
     lv_obj_t *t2 = mk_label(opt_box, "按上键: 再次语音输入", &buddy_font_16, UI_SUB);
@@ -375,19 +363,19 @@ static void build_running(void)
     page_t *p = &s_pages[APP_ST_AGENT_RUNNING];
     lv_obj_t *r = page_root(p);
 
-    ui_pixel_title_plate(r, 10, "正在执行", &voice_font_20);
+    ui_pixel_title_plate(r, 30, "正在执行", &voice_font_20);
 
     lv_obj_t *card = ui_pixel_panel_create(r, 16, CONTENT_Y, 208, 180, UI_PAPER);
 
     p->run_chip = block(card, 44, 16, 120, 32, UI_ORANGE);
     lv_obj_set_style_border_width(p->run_chip, 2, 0);
-    lv_obj_set_style_border_color(p->run_chip, lv_color_hex(UI_INK), 0);
-    p->run_chip_label = mk_label(p->run_chip, "执行中", &voice_font_20, UI_INK);
+    lv_obj_set_style_border_color(p->run_chip, lv_color_hex(UI_BORDER), 0);
+    p->run_chip_label = mk_label(p->run_chip, "执行中", &voice_font_20, UI_ON_ACCENT);
     lv_obj_center(p->run_chip_label);
 
-    block(card, 14, 60, 180, 2, 0xD4D8C8);
+    block(card, 14, 60, 180, 2, UI_BORDER);
 
-    p->run_message = mk_label(card, "", &buddy_font_16, UI_INK);
+    p->run_message = mk_label(card, "", &buddy_font_16, UI_TEXT);
     lv_obj_set_width(p->run_message, 180);
     lv_label_set_long_mode(p->run_message, LV_LABEL_LONG_WRAP);
     lv_obj_align(p->run_message, LV_ALIGN_TOP_MID, 0, 72);
@@ -400,22 +388,22 @@ static void build_approval(void)
     page_t *p = &s_pages[APP_ST_APPROVAL];
     lv_obj_t *r = page_root(p);
 
-    ui_pixel_title_plate(r, 10, "请求审批", &voice_font_20);
+    ui_pixel_title_plate(r, 30, "请求审批", &voice_font_20);
 
     lv_obj_t *card = ui_pixel_panel_create(r, 16, CONTENT_Y, 208, 180, UI_PAPER);
 
     p->ap_risk_banner = block(card, 44, 12, 120, 30, UI_YELLOW);
     lv_obj_set_style_border_width(p->ap_risk_banner, 2, 0);
-    lv_obj_set_style_border_color(p->ap_risk_banner, lv_color_hex(UI_INK), 0);
-    p->ap_risk_label = mk_label(p->ap_risk_banner, "审批", &voice_font_20, UI_INK);
+    lv_obj_set_style_border_color(p->ap_risk_banner, lv_color_hex(UI_BORDER), 0);
+    p->ap_risk_label = mk_label(p->ap_risk_banner, "审批", &voice_font_20, UI_ON_ACCENT);
     lv_obj_center(p->ap_risk_label);
 
-    p->ap_title = mk_label(card, "", &buddy_font_16, UI_INK);
+    p->ap_title = mk_label(card, "", &buddy_font_16, UI_TEXT);
     lv_obj_set_width(p->ap_title, 180);
     lv_label_set_long_mode(p->ap_title, LV_LABEL_LONG_WRAP);
     lv_obj_align(p->ap_title, LV_ALIGN_TOP_MID, 0, 50);
 
-    block(card, 14, 88, 180, 2, 0xD4D8C8);
+    block(card, 14, 88, 180, 2, UI_BORDER);
 
     p->ap_target = mk_label(card, "", &buddy_font_16, UI_SKY_DARK);
     lv_obj_set_width(p->ap_target, 180);
@@ -479,8 +467,8 @@ static const char *agent_state_zh(const char *en)
 
 static void agent_chip_style(const char *en, uint32_t *bg, uint32_t *fg)
 {
-    if (en && strcmp(en, "running") == 0)      { *bg = UI_SKY;    *fg = 0xFFFFFF; }
-    else if (en && strcmp(en, "error") == 0)   { *bg = UI_RED;    *fg = 0xFFFFFF; }
+    if (en && strcmp(en, "running") == 0)      { *bg = UI_SKY;    *fg = UI_TEXT; }
+    else if (en && strcmp(en, "error") == 0)   { *bg = UI_RED;    *fg = UI_ON_ACCENT; }
     else if (en && strcmp(en, "done") == 0)    { *bg = UI_GRASS;  *fg = UI_INK; }
     else if (en && strcmp(en, "thinking") == 0){ *bg = UI_YELLOW; *fg = UI_INK; }
     else                                       { *bg = UI_ORANGE; *fg = UI_INK; }
@@ -636,7 +624,7 @@ void app_ui_render(const app_ui_snapshot_t *snap)
             set_agent_message(s_pages[APP_ST_LISTENING].live_text, live,
                               !snap->transcript_final);
             lv_obj_set_style_text_color(s_pages[APP_ST_LISTENING].live_text,
-                                        lv_color_hex(UI_INK), 0);
+                                        lv_color_hex(UI_TEXT), 0);
         }
         break;
     }
@@ -666,7 +654,7 @@ void app_ui_render(const app_ui_snapshot_t *snap)
             lv_obj_set_style_bg_color(s_pages[APP_ST_APPROVAL].ap_risk_banner,
                                       lv_color_hex(RISK_COLORS[r]), 0);
             lv_obj_set_style_text_color(s_pages[APP_ST_APPROVAL].ap_risk_label,
-                                        lv_color_hex(r == APP_RISK_HIGH ? 0xFFFFFF : UI_INK), 0);
+                                        lv_color_hex(UI_ON_ACCENT), 0);
             label_set_if_changed(s_pages[APP_ST_APPROVAL].ap_risk_label, T_RISK[r]);
         }
         label_set_if_changed(s_pages[APP_ST_APPROVAL].ap_title, snap->approval_title);

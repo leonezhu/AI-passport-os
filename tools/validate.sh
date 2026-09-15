@@ -10,7 +10,6 @@ usage() {
 
 run_static_checks() {
     local actionlint_bin
-    local test_dir
 
     python3 tools/check_repo.py
 
@@ -23,14 +22,8 @@ run_static_checks() {
     fi
     "${actionlint_bin}" -color .github/workflows/*.yml
 
-    test_dir="$(mktemp -d /tmp/ai-passport-host-tests.XXXXXX)"
-    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_ui_pixel_math.c main/ui_pixel_math.c \
-        -o "${test_dir}/test_ui_pixel_math"
-    "${test_dir}/test_ui_pixel_math"
-    python3 tests/test_verify_firmware.py
-    rm -rf "${test_dir}"
-    echo "Host tests: PASS"
+    bash tools/test-host.sh
+
 }
 
 run_firmware_checks() (

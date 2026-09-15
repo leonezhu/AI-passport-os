@@ -62,11 +62,11 @@ namespace {
 constexpr char kTag[] = "app_home";
 
 // 绿磷光配色(整页黑绿单色,参照复古终端锁屏参考图)。
-constexpr uint32_t kBg = 0x03120B;          // 屏底近黑绿
-constexpr uint32_t kCardBg = 0x051910;      // 卡片底(比屏底略亮)
-constexpr uint32_t kPhos = 0x8CF5A6;        // 磷光绿:主文字/点阵/艺术图
-constexpr uint32_t kPhosDim = 0x3F8F5F;     // 暗绿:次级文字
-constexpr uint32_t kPhosBorder = 0x2E7C4E;  // 卡片描边
+constexpr uint32_t kBg = UI_BG;          // 屏底近黑绿
+constexpr uint32_t kCardBg = UI_SURFACE;      // 卡片底(比屏底略亮)
+constexpr uint32_t kPhos = UI_ACCENT;        // 磷光绿:主文字/点阵/艺术图
+constexpr uint32_t kPhosDim = UI_TEXT_DIM;     // 暗绿:次级文字
+constexpr uint32_t kPhosBorder = UI_BORDER;  // 卡片描边
 
 // 兼容既有更新函数的语义色:磷光风格里"强调/在线"都是亮绿,弱化都是暗绿。
 constexpr uint32_t kText = kPhos;

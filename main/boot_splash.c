@@ -2,6 +2,7 @@
 //   "PASSPORT OS" 打字机式出现 + 尾部光标闪烁,下方 14 格绿点进度条逐格点亮。
 //   总时长 ~0.9s,与开机音(chime)同时发生,声画同步。
 #include "boot_splash.h"
+#include "ui_palette.h"
 
 #include "bsp_display.h"
 #include "esp_lcd_panel_io.h"
@@ -16,10 +17,10 @@
 static const char *TAG = "boot_splash";
 
 // 与首页同源的磷光配色
-#define C_BG      0x03120B
-#define C_PHOS    0x8CF5A6
-#define C_PHOSDIM 0x3F8F5F
-#define C_BORDER  0x2E7C4E
+#define C_BG      UI_BG
+#define C_PHOS    UI_ACCENT
+#define C_PHOSDIM UI_TEXT_DIM
+#define C_BORDER  UI_BORDER
 
 #define BAR_N     14
 #define STEP_MS   62          // 14 格 × 62ms ≈ 0.87s
@@ -74,14 +75,19 @@ void boot_splash_run(void) {
     lv_label_set_text(sub, "RETRO AI TERMINAL");
     lv_obj_align(sub, LV_ALIGN_CENTER, 0, 4);
 
-    // 打字机光标:亮绿方块,随节拍在标题宽度内右移,循环闪
-    lv_obj_t *cursor = blk(s_splash, 0, 0, 10, 22, C_PHOS);
-    lv_obj_align(cursor, LV_ALIGN_CENTER, 0, -26);
-    lv_obj_move_foreground(cursor);
+    // Measure the actual title rather than assuming a 150 px width. A mask
+    // reveals the existing text, so its alignment never jumps between frames.
+    lv_obj_update_layout(title);
+    const int title_x = lv_obj_get_x(title);
+    const int title_y = lv_obj_get_y(title);
+    const int title_w = lv_obj_get_width(title);
+    const int title_h = lv_obj_get_height(title);
+    lv_obj_t *mask = blk(s_splash, title_x, title_y, title_w, title_h, C_BG);
+    lv_obj_t *cursor = blk(s_splash, title_x, title_y, 2, title_h, C_PHOS);
 
     // 进度条:14 格 10×10,间隙 3px,总宽 179,水平居中
     (void)blk(s_splash, (240 - (BAR_N * 13 - 3)) / 2, 186,
-              BAR_N * 13 - 3, 10, 0x0A2418);
+              BAR_N * 13 - 3, 10, UI_SURFACE_ALT);
     lv_obj_t *cells[BAR_N];
     for (int i = 0; i < BAR_N; ++i) {
         cells[i] = blk(s_splash, (240 - (BAR_N * 13 - 3)) / 2 + i * 13, 186,
@@ -109,13 +115,18 @@ void boot_splash_run(void) {
     }
 
     // 节拍:光标在标题宽度(约 150px)内随进度右移,格点同步点亮
-    const int title_w = 150;
     for (int i = 0; i < BAR_N; ++i) {
         vTaskDelay(pdMS_TO_TICKS(STEP_MS));
         if (!bsp_lvgl_lock(200)) continue;
         lv_obj_clear_flag(cells[i], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_align(cursor, LV_ALIGN_CENTER, -title_w / 2 + title_w * (i + 1) / BAR_N,
-                     -26);
+        const int revealed = title_w * (i + 1) / BAR_N;
+        lv_obj_set_x(mask, title_x + revealed);
+        lv_obj_set_width(mask, title_w - revealed);
+        lv_obj_set_x(cursor, title_x + revealed);
+        if (i + 1 == BAR_N) {
+            lv_obj_add_flag(mask, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(cursor, LV_OBJ_FLAG_HIDDEN);
+        }
         // 光标闪烁:偶数格半透明
         lv_obj_set_style_opa(cursor, (i % 2) ? LV_OPA_40 : LV_OPA_COVER, 0);
         bsp_lvgl_unlock();
