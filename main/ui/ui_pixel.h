@@ -1,5 +1,5 @@
-// Shared 240x320 phosphor-terminal widgets. Square corners, thin frames,
-// readable green text and restrained amber focus. No background animation.
+// Shared 240x320 travel-instrument widgets. Warm paper text, charcoal surfaces,
+// open headings and amber focus. No decorative background animation.
 #pragma once
 
 #include "lvgl.h"
@@ -12,8 +12,8 @@ extern "C" {
 #include "ui_palette.h"
 
 // 字间距规范
-#define UI_LS_TITLE   2
-#define UI_LS_BODY    1
+#define UI_LS_TITLE   1
+#define UI_LS_BODY    0
 
 // Terminal background; no decorative objects or continuously running timers.
 void ui_pixel_background(lv_obj_t *scr);
@@ -31,7 +31,7 @@ void ui_pixel_set_selected(lv_obj_t *panel, bool selected, bool enabled);
 
 // ---- 2026-09-13 新增共享构件 ----
 
-// Terminal title: thin frame, bounded to 216px, centred at y.
+// Open title with a bottom rule, bounded to 216px at y.
 // 返回牌对象(可继续改 y 或加子对象)。
 lv_obj_t *ui_pixel_title_plate(lv_obj_t *parent, int y, const char *text,
                                const lv_font_t *font);

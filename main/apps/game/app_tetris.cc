@@ -309,6 +309,7 @@ void build_oom_page() {
     s_dead_panel = block(s_screen, 24, 104, 192, 112, UI_PAPER);
     if (!s_dead_panel) return;
     lv_obj_set_style_border_width(s_dead_panel, 1, 0);
+    lv_obj_set_style_border_side(s_dead_panel, LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(s_dead_panel, lv_color_hex(UI_BORDER), 0);
     s_dead_info = mk_label(s_dead_panel, "内存不足", &buddy_font_16, UI_TEXT,
                            LV_TEXT_ALIGN_CENTER);
@@ -399,6 +400,7 @@ void build_ui() {
 
     s_dead_panel = block(s_screen, 24, 344, 192, 112, UI_PAPER);
     lv_obj_set_style_border_width(s_dead_panel, 1, 0);
+    lv_obj_set_style_border_side(s_dead_panel, LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(s_dead_panel, lv_color_hex(UI_BORDER), 0);
     lv_obj_t *t = mk_label(s_dead_panel, "游戏结束", &buddy_font_16, UI_TEXT, LV_TEXT_ALIGN_CENTER);
     lv_obj_set_width(t, 186);

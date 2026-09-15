@@ -64,7 +64,7 @@ constexpr char kTag[] = "app_home";
 // 绿磷光配色(整页黑绿单色,参照复古终端锁屏参考图)。
 constexpr uint32_t kBg = UI_BG;          // 屏底近黑绿
 constexpr uint32_t kCardBg = UI_SURFACE;      // 卡片底(比屏底略亮)
-constexpr uint32_t kPhos = UI_ACCENT;        // 磷光绿:主文字/点阵/艺术图
+constexpr uint32_t kPhos = UI_TEXT;        // 磷光绿:主文字/点阵/艺术图
 constexpr uint32_t kPhosDim = UI_TEXT_DIM;     // 暗绿:次级文字
 constexpr uint32_t kPhosBorder = UI_BORDER;  // 卡片描边
 
@@ -126,7 +126,6 @@ lv_obj_t *s_lbl_temp = nullptr;
 lv_obj_t *s_lbl_humidity = nullptr;  // 相对湿度(天气卡右下)
 lv_obj_t *s_lbl_wind = nullptr;      // 风向·风级行
 lv_obj_t *s_lbl_footer = nullptr;
-lv_obj_t *s_lbl_footer_shadow = nullptr;
 
 // 底部艺术底图:0=城市夜景 1=山湖月色(均内置 flash);将来可扩展用户上传槽。
 uint8_t s_band_index = 0;
@@ -469,8 +468,7 @@ void footer_set(const char *text, const lv_font_t *font, uint32_t color) {
     lv_obj_set_style_text_font(s_lbl_footer, font, 0);
     lv_obj_set_style_text_color(s_lbl_footer, lv_color_hex(color), 0);
     lv_label_set_text(s_lbl_footer, text);
-    lv_obj_set_style_text_font(s_lbl_footer_shadow, font, 0);
-    lv_label_set_text(s_lbl_footer_shadow, text);
+
 }
 
 void update_footer_label() {
@@ -523,10 +521,11 @@ lv_obj_t *make_panel(lv_obj_t *parent, int x, int y, int w, int h, int radius,
     lv_obj_t *p = lv_obj_create(parent);
     lv_obj_set_pos(p, x, y);
     lv_obj_set_size(p, w, h);
-    lv_obj_set_style_bg_color(p, lv_color_hex(kCardBg), 0);
+    lv_obj_set_style_bg_color(p, lv_color_hex(kBg), 0);
     lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(p, 0, 0);
     lv_obj_set_style_border_width(p, 1, 0);
+    lv_obj_set_style_border_side(p, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(p, lv_color_hex(kPhosBorder), 0);
     lv_obj_set_style_pad_all(p, 2, 0);
     lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
@@ -545,6 +544,9 @@ void create_ui() {
     px_block(s_screen, 0, 24, 240, 1, kPhosBorder);
     ui_pixel_wifi_bars_create(s_screen, 12, 18, s_wifi_bars);
     s_batt = ui_pixel_battery_create(s_screen, 206, 6, kPhos, &lv_font_montserrat_14);
+
+    lv_obj_t *passport = ui_pixel_label(s_screen, "PASSPORT", &lv_font_montserrat_14, UI_TEXT_DIM);
+    lv_obj_set_pos(passport, 42, 4);
 
     // ---- 左卡 (x6 y28 104×208):人像 + 姓名 + 签名 ----
     lv_obj_t *portrait_card = make_panel(s_screen, 6, 28, 104, 208, 0, true);
@@ -570,6 +572,7 @@ void create_ui() {
     s_lbl_name = make_label(portrait_card, &buddy_font_16, kPhos, LV_TEXT_ALIGN_CENTER);
     lv_obj_set_style_text_letter_space(s_lbl_name, UI_LS_TITLE, 0);
     lv_obj_set_width(s_lbl_name, 98);
+    lv_label_set_long_mode(s_lbl_name, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_pos(s_lbl_name, 0, 156);
     s_lbl_sig = make_label(portrait_card, &buddy_font_16, kPhosDim, LV_TEXT_ALIGN_CENTER);
     lv_obj_set_width(s_lbl_sig, 98);
@@ -605,9 +608,9 @@ void create_ui() {
     lv_obj_t *weather_card = make_panel(s_screen, 114, 142, 120, 94, 0, true);
     s_wicon_zone = px_container(weather_card, 4, 8, 22, 18);
 
-    s_lbl_temp = make_label(weather_card, &lv_font_montserrat_32, kPhos,
+    s_lbl_temp = make_label(weather_card, &lv_font_montserrat_20, kPhos,
                             LV_TEXT_ALIGN_RIGHT);
-    lv_obj_set_pos(s_lbl_temp, 34, 2);
+    lv_obj_set_pos(s_lbl_temp, 34, 8);
     lv_obj_set_width(s_lbl_temp, 76);
 
     s_lbl_wtext = make_label(weather_card, &buddy_font_16, kPhosDim, LV_TEXT_ALIGN_LEFT);
@@ -637,20 +640,15 @@ void create_ui() {
     s_band_img = lv_image_create(s_screen);
     lv_image_set_src(s_band_img, &s_band_dsc[s_band_index]);
     lv_obj_set_pos(s_band_img, 0, 240);
-    lv_obj_set_style_image_recolor(s_band_img, lv_color_hex(kPhos), 0);
+    lv_obj_set_style_image_recolor(s_band_img, lv_color_hex(UI_AMBER), 0);
 
     // ---- 按键提示:黑条压在美术下缘 + 绿字(带 1px 黑投影) ----
-    lv_obj_t *strip = px_block(s_screen, 0, 300, 240, 20, 0x000000);
-    lv_obj_set_style_bg_opa(strip, LV_OPA_60, 0);
-    s_lbl_footer_shadow = make_label(s_screen, &buddy_font_16, 0x000000, LV_TEXT_ALIGN_CENTER);
-    lv_obj_set_width(s_lbl_footer_shadow, kContentW);
-    lv_obj_align(s_lbl_footer_shadow, LV_ALIGN_BOTTOM_MID, 1, 0);
-    lv_label_set_long_mode(s_lbl_footer_shadow, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_t *strip = px_block(s_screen, 0, 296, 240, 24, UI_BG);
+    lv_obj_set_style_bg_opa(strip, LV_OPA_COVER, 0);
     s_lbl_footer = make_label(s_screen, &buddy_font_16, kPhos, LV_TEXT_ALIGN_CENTER);
     lv_obj_set_width(s_lbl_footer, kContentW);
     lv_obj_align(s_lbl_footer, LV_ALIGN_BOTTOM_MID, 0, -1);
     lv_label_set_long_mode(s_lbl_footer, LV_LABEL_LONG_MODE_DOTS);
-    lv_label_set_text(s_lbl_footer_shadow, "上:刷新 下:详情 确:应用");
     lv_label_set_text(s_lbl_footer, "上:刷新 下:详情 确:应用");
 }
 
@@ -913,7 +911,6 @@ void home_stop() {
     s_lbl_humidity = nullptr;
     s_lbl_wind = nullptr;
     s_lbl_footer = nullptr;
-    s_lbl_footer_shadow = nullptr;
     bsp_lvgl_unlock();
 
     // 屏已删、任务已退,人像 A8 缓冲可以还给堆了 —— 其它应用(小智)正等着

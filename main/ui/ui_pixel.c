@@ -77,7 +77,7 @@ lv_obj_t *ui_pixel_panel_create(lv_obj_t *parent, int x, int y, int w, int h,
 {
     lv_obj_t *panel = block(parent, x, y, w, h, color);
     lv_obj_set_style_border_color(panel, lv_color_hex(UI_BORDER), 0);
-    lv_obj_set_style_border_width(panel, 1, 0);
+    lv_obj_set_style_border_width(panel, 0, 0);
     lv_obj_set_style_pad_all(panel, 7, 0);
     return panel;
 }
@@ -164,29 +164,22 @@ void ui_pixel_set_selected(lv_obj_t *panel, bool selected, bool enabled)
 
 // ==================== 2026-09-13 新增共享构件 ====================
 
-// 文字像素宽 = 标签布局后的真实宽度(字号/混排都不用手算)
-static int text_w(lv_obj_t *label)
-{
-    lv_obj_update_layout(label);
-    return (int)lv_obj_get_width(label);
-}
-
 lv_obj_t *ui_pixel_title_plate(lv_obj_t *parent, int y, const char *text,
                                const lv_font_t *font)
 {
-    lv_obj_t *plate = block(parent, 0, y, 216, 36, UI_SURFACE);
+    lv_obj_t *plate = block(parent, 0, y, 216, 36, UI_BG);
     lv_obj_set_style_border_width(plate, 1, 0);
+    lv_obj_set_style_border_side(plate, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(plate, lv_color_hex(UI_BORDER), 0);
     lv_obj_t *t = ui_pixel_label_ls(plate, text, font, UI_TEXT, UI_LS_TITLE);
-    int w = text_w(t) + 26;
-    if (w > 216) w = 216;
+    const int w = 216;
     const int h = (int)lv_font_get_line_height(font) + 12;
     lv_obj_set_size(plate, w, h);
     lv_obj_set_pos(plate, (240 - w) / 2, y);
-    lv_obj_set_width(t, w - 20);
+    lv_obj_set_width(t, w - 8);
     lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_center(t);
+    lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(t, LV_ALIGN_LEFT_MID, 0, -2);
     return plate;
 }
 
@@ -247,7 +240,7 @@ void ui_pixel_battery_set(ui_pixel_battery_t *batt, int soc)
         snprintf(text, sizeof(text), "%d%%", soc);
         lv_obj_set_width(batt->fill, 1 + (17 * soc) / 100);
     } else {
-        color = 0x8A97A0;
+        color = UI_TEXT_DIM;
         snprintf(text, sizeof(text), "--");
         lv_obj_set_width(batt->fill, 1);
     }
@@ -260,7 +253,7 @@ void ui_pixel_wifi_bars_create(lv_obj_t *parent, int x, int y, lv_obj_t *bars[3]
     // y 为最低一条的底边;三条逐级升高,占位 16×13。
     for (int i = 0; i < 3; ++i) {
         const int h = 5 + i * 4;
-        bars[i] = block(parent, x + i * 6, y - h, 4, h, 0x8A97A0);
+        bars[i] = block(parent, x + i * 6, y - h, 4, h, UI_TEXT_DIM);
         lv_obj_set_style_radius(bars[i], 0, 0);
     }
 }

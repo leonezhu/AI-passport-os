@@ -108,7 +108,8 @@ void create_ui() {
         lv_obj_set_style_radius(s_rows[i], 0, 0);
         lv_obj_set_style_bg_color(s_rows[i], lv_color_hex(UI_PAPER), 0);
         lv_obj_set_style_bg_opa(s_rows[i], LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(s_rows[i], 1, 0);
+        lv_obj_set_style_border_width(s_rows[i], 2, 0);
+        lv_obj_set_style_border_side(s_rows[i], LV_BORDER_SIDE_LEFT, 0);
         lv_obj_set_style_border_color(s_rows[i], lv_color_hex(UI_BORDER), 0);
         lv_obj_set_style_pad_hor(s_rows[i], 12, 0);
         lv_obj_set_style_pad_ver(s_rows[i], 0, 0);

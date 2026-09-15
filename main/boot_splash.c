@@ -71,8 +71,8 @@ void boot_splash_run(void) {
     lv_obj_t *sub = lv_label_create(s_splash);
     lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(sub, lv_color_hex(C_PHOSDIM), 0);
-    lv_obj_set_style_text_letter_space(sub, 2, 0);
-    lv_label_set_text(sub, "RETRO AI TERMINAL");
+    lv_obj_set_style_text_letter_space(sub, 1, 0);
+    lv_label_set_text(sub, "TRAVEL INSTRUMENT");
     lv_obj_align(sub, LV_ALIGN_CENTER, 0, 4);
 
     // Measure the actual title rather than assuming a 150 px width. A mask

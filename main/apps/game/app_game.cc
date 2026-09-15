@@ -271,7 +271,7 @@ void build_pipes(lv_obj_t *parent) {
 
 // 音量条:轨道 + 填充。填充初始透明,update_vu() 按推力点亮。
 void build_vu(lv_obj_t *parent) {
-    px_block(parent, kVuX, kVuY, kVuW, kVuH, UI_SKY_DARK, 0);
+    px_block(parent, kVuX, kVuY, kVuW, kVuH, UI_SURFACE_ALT, 0);
     s_vu_fill = px_block(parent, kVuX, kVuY, kVuW, kVuH, UI_YELLOW, 0);
     lv_obj_set_style_bg_opa(s_vu_fill, LV_OPA_TRANSP, 0);
 }
@@ -280,7 +280,8 @@ void build_dead_panel(lv_obj_t *parent) {
     // 纸底 + 墨描边,宽 190, 高 122(几何与优化前完全一致,只加了滑入动画)
     lv_obj_t *panel = px_block(parent, 25, kPanelHiddenY, 190, 122, kPaper, 0);
     s_dead_panel = panel;
-    lv_obj_set_style_border_width(panel, 3, 0);
+    lv_obj_set_style_border_width(panel, 1, 0);
+    lv_obj_set_style_border_side(panel, LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(panel, lv_color_hex(UI_BORDER), 0);
 
     lv_obj_t *title = px_label(panel, "你在狗叫什么！", &buddy_font_16, UI_DANGER,
@@ -629,7 +630,7 @@ void build_ui() {
     ui_pixel_background(s_screen);
 
     lv_obj_t *bar = ui_pixel_top_bar(s_screen);
-    lv_obj_t *title = px_label(bar, "你在狗叫什么", &buddy_font_16, 0xFFFFFF,
+    lv_obj_t *title = px_label(bar, "你在狗叫什么", &buddy_font_16, UI_TEXT,
                                LV_TEXT_ALIGN_LEFT);
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 8, 0);
     s_score_lbl = px_label(bar, "0", &lv_font_montserrat_20, UI_YELLOW,
@@ -649,7 +650,7 @@ void build_ui() {
     lv_obj_set_style_bg_opa(s_hint_lbl, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(s_hint_lbl, 4, 0);
     lv_obj_set_style_radius(s_hint_lbl, 0, 0);
-    lv_obj_set_style_border_width(s_hint_lbl, 2, 0);
+    lv_obj_set_style_border_width(s_hint_lbl, 0, 0);
     lv_obj_set_style_border_color(s_hint_lbl, lv_color_hex(UI_BORDER), 0);
     lv_obj_align(s_hint_lbl, LV_ALIGN_BOTTOM_MID, 0, -6);
 

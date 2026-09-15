@@ -6,24 +6,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes">
     <style>
         :root {
-            --bg-grad-1: #03120b;
-            --bg-grad-2: #03120b;
-            --surface: #091e14;
-            --border: #37694b;
-            --text: #a8edbb;
-            --text-muted: #80af90;
-            --success: #8cf5a6;
+            --bg-grad-1: #181b1c;
+            --bg-grad-2: #181b1c;
+            --surface: #202526;
+            --border: #59605d;
+            --text: #eee7d6;
+            --text-muted: #b3b2a5;
+            --success: #9db89a;
             --shadow: none;
         }
         @media (prefers-color-scheme: dark) {
             :root {
-                --bg-grad-1: #03120b;
-                --bg-grad-2: #03120b;
-                --surface: #091e14;
-                --border: #37694b;
-                --text: #a8edbb;
-                --text-muted: #80af90;
-                --success: #8cf5a6;
+                --bg-grad-1: #181b1c;
+                --bg-grad-2: #181b1c;
+                --surface: #202526;
+                --border: #59605d;
+                --text: #eee7d6;
+                --text-muted: #b3b2a5;
+                --success: #9db89a;
                 --shadow: none;
             }
         }
@@ -99,11 +99,17 @@
             margin: 0;
         }
     /* Keyboard focus and reduced motion remain visible on the dark terminal. */
-        :focus-visible { outline: 2px solid #edbc73; outline-offset: 3px; }
+        :focus-visible { outline: 2px solid #ddb36c; outline-offset: 3px; }
         @media (prefers-reduced-motion: reduce) { *, *::before, *::after {
             animation-duration: 0.01ms !important; transition-duration: 0.01ms !important;
         } }
-    </style>
+
+/* Travel instrument: unboxed editorial headings; inputs retain affordance. */
+.card{border:0;border-top:1px solid var(--border);background:transparent}
+input,button,select{font:inherit}
+h1,h2,h3{letter-spacing:.04em;font-weight:600;line-height:1.25}
+p{line-height:1.65}
+</style>
 </head>
 <body>
     <div class="container">
@@ -118,7 +124,7 @@
             </div>
         </div>
     </div>
-    
+
     <script>
         window.addEventListener('load', function() {
             const params = new URLSearchParams(window.location.search);

@@ -81,10 +81,10 @@ void ui_init() {
     lv_obj_t *top_bar = lv_obj_create(s_screen);
     lv_obj_set_size(top_bar, 216, 30);
     lv_obj_align(top_bar, LV_ALIGN_TOP_MID, 0, 52);
-    lv_obj_set_style_bg_color(top_bar, lv_color_hex(UI_PAPER), 0);
+    lv_obj_set_style_bg_color(top_bar, lv_color_hex(UI_BG), 0);
     lv_obj_set_style_bg_opa(top_bar, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(top_bar, 0, 0);
-    lv_obj_set_style_border_width(top_bar, 2, 0);
+    lv_obj_set_style_border_width(top_bar, 0, 0);
     lv_obj_set_style_border_color(top_bar, lv_color_hex(UI_BORDER), 0);
     lv_obj_set_style_pad_hor(top_bar, 10, 0);
     lv_obj_set_style_pad_ver(top_bar, 0, 0);
@@ -109,12 +109,15 @@ void ui_init() {
     s_msg_container = lv_obj_create(s_screen);
     lv_obj_set_size(s_msg_container, 216, 186);
     lv_obj_set_pos(s_msg_container, 12, 88);
-    lv_obj_set_style_bg_color(s_msg_container, lv_color_hex(UI_PAPER), 0);
+    lv_obj_set_style_bg_color(s_msg_container, lv_color_hex(UI_BG), 0);
     lv_obj_set_style_bg_opa(s_msg_container, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_msg_container, 0, 0);
     lv_obj_set_style_border_width(s_msg_container, 1, 0);
+    lv_obj_set_style_border_side(s_msg_container, LV_BORDER_SIDE_TOP, 0);
     lv_obj_set_style_border_color(s_msg_container, lv_color_hex(UI_BORDER), 0);
-    lv_obj_set_style_pad_all(s_msg_container, 10, 0);
+    lv_obj_set_style_pad_all(s_msg_container, 8, 0);
+    lv_obj_set_style_pad_row(s_msg_container, 12, 0);
+    lv_obj_set_style_text_line_space(s_msg_container, 4, 0);
     lv_obj_set_flex_flow(s_msg_container, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_msg_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_START);
@@ -122,7 +125,7 @@ void ui_init() {
     lv_obj_set_scrollbar_mode(s_msg_container, LV_SCROLLBAR_MODE_AUTO);
 
     s_user_text_label = lv_label_create(s_msg_container);
-    lv_obj_set_width(s_user_text_label, 184);
+    lv_obj_set_width(s_user_text_label, 196);
     lv_obj_set_style_text_font(s_user_text_label, &buddy_font_16, 0);
     lv_obj_set_style_text_color(s_user_text_label, lv_color_hex(kUserBlue), 0);
     lv_label_set_long_mode(s_user_text_label, LV_LABEL_LONG_WRAP);
@@ -130,7 +133,7 @@ void ui_init() {
     lv_label_set_text(s_user_text_label, s_user_text.c_str());
 
     s_ai_text_label = lv_label_create(s_msg_container);
-    lv_obj_set_width(s_ai_text_label, 184);
+    lv_obj_set_width(s_ai_text_label, 196);
     lv_obj_set_style_text_font(s_ai_text_label, &buddy_font_16, 0);
     lv_obj_set_style_text_color(s_ai_text_label, lv_color_hex(kTextMain), 0);
     lv_label_set_long_mode(s_ai_text_label, LV_LABEL_LONG_WRAP);

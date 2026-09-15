@@ -106,6 +106,7 @@ static lv_obj_t *mk_label(lv_obj_t *parent, const char *text, const lv_font_t *f
     lv_label_set_text(l, text);
     lv_obj_set_style_text_font(l, font, 0);
     lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+    lv_obj_set_style_text_line_space(l, 3, 0);
     return l;
 }
 
@@ -245,7 +246,7 @@ static void build_home(void)
 
     mic_icon(card, 104, 38);
 
-    lv_obj_t *t_main = mk_label(card, "按住上键说话", &voice_font_20, UI_TEXT);
+    lv_obj_t *t_main = mk_label(card, "按住上键说话", &buddy_font_16, UI_TEXT);
     lv_obj_align(t_main, LV_ALIGN_TOP_MID, 0, 72);
 
     lv_obj_t *t_sub = mk_label(card, "文字实时飞入电脑光标", &buddy_font_16, UI_SUB);
@@ -254,7 +255,7 @@ static void build_home(void)
     lv_obj_t *btn = block(card, 24, 134, 160, 30, UI_YELLOW);
     lv_obj_set_style_border_width(btn, 2, 0);
     lv_obj_set_style_border_color(btn, lv_color_hex(UI_BORDER), 0);
-    lv_obj_t *start = mk_label(btn, "按 确定 进入", &voice_font_20, UI_ON_ACCENT);
+    lv_obj_t *start = mk_label(btn, "按 确定 进入", &buddy_font_16, UI_ON_ACCENT);
     lv_obj_center(start);
 
     ui_pixel_hint_pill(r, T_HINT_HOME, &buddy_font_16);
@@ -271,16 +272,17 @@ static void build_ready(void)
 
     mic_icon(card, 104, 38);
 
-    lv_obj_t *t_main = mk_label(card, "按住 上键 说话", &voice_font_20, UI_TEXT);
+    lv_obj_t *t_main = mk_label(card, "按住 上键 说话", &buddy_font_16, UI_TEXT);
     lv_obj_align(t_main, LV_ALIGN_TOP_MID, 0, 74);
 
     lv_obj_t *t_sub = mk_label(card, "松开上键即完成输入", &buddy_font_16, UI_SUB);
     lv_obj_align(t_sub, LV_ALIGN_TOP_MID, 0, 104);
 
     lv_obj_t *badge = block(card, 34, 134, 140, 26, UI_SURFACE_ALT);
-    lv_obj_set_style_border_width(badge, 2, 0);
+    lv_obj_set_style_border_width(badge, 0, 0);
+    lv_obj_set_style_bg_opa(badge, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_color(badge, lv_color_hex(UI_BORDER), 0);
-    lv_obj_t *b_txt = mk_label(badge, "[ 随时说话就绪 ]", &buddy_font_16, UI_GRASS_DARK);
+    lv_obj_t *b_txt = mk_label(badge, "随时说话就绪", &buddy_font_16, UI_GRASS_DARK);
     lv_obj_center(b_txt);
 
     ui_pixel_hint_pill(r, T_HINT_READY, &buddy_font_16);
@@ -308,7 +310,7 @@ static void build_listening(void)
         lv_obj_set_pos(bar, 43 + i * 26, 38);
         lv_obj_set_style_radius(bar, 0, 0);
         lv_obj_set_style_radius(bar, 0, LV_PART_INDICATOR);
-        lv_obj_set_style_border_width(bar, 2, 0);
+        lv_obj_set_style_border_width(bar, 0, 0);
         lv_obj_set_style_border_color(bar, lv_color_hex(UI_BORDER), 0);
         lv_obj_set_style_bg_color(bar, lv_color_hex(UI_SURFACE_ALT), 0);
         lv_obj_set_style_bg_color(bar, lv_color_hex(UI_GRASS), LV_PART_INDICATOR);
@@ -340,16 +342,17 @@ static void build_transcribing(void)
 
     check_icon(card, 104, 32);
 
-    lv_obj_t *done = mk_label(card, "文字已送达电脑", &voice_font_20, UI_TEXT);
+    lv_obj_t *done = mk_label(card, "文字已送达电脑", &buddy_font_16, UI_TEXT);
     lv_obj_align(done, LV_ALIGN_TOP_MID, 0, 62);
 
     block(card, 14, 96, 180, 2, UI_BORDER);
 
     lv_obj_t *opt_box = block(card, 14, 106, 180, 56, UI_SURFACE_ALT);
-    lv_obj_set_style_border_width(opt_box, 2, 0);
+    lv_obj_set_style_border_width(opt_box, 0, 0);
+    lv_obj_set_style_bg_opa(opt_box, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_color(opt_box, lv_color_hex(UI_BORDER), 0);
 
-    lv_obj_t *t1 = mk_label(opt_box, "按下键: 确认发送 (Enter)", &buddy_font_16, UI_TEXT);
+    lv_obj_t *t1 = mk_label(opt_box, "下键: 确认发送", &buddy_font_16, UI_TEXT);
     lv_obj_align(t1, LV_ALIGN_TOP_MID, 0, 8);
 
     lv_obj_t *t2 = mk_label(opt_box, "按上键: 再次语音输入", &buddy_font_16, UI_SUB);
@@ -370,7 +373,7 @@ static void build_running(void)
     p->run_chip = block(card, 44, 16, 120, 32, UI_ORANGE);
     lv_obj_set_style_border_width(p->run_chip, 2, 0);
     lv_obj_set_style_border_color(p->run_chip, lv_color_hex(UI_BORDER), 0);
-    p->run_chip_label = mk_label(p->run_chip, "执行中", &voice_font_20, UI_ON_ACCENT);
+    p->run_chip_label = mk_label(p->run_chip, "执行中", &buddy_font_16, UI_ON_ACCENT);
     lv_obj_center(p->run_chip_label);
 
     block(card, 14, 60, 180, 2, UI_BORDER);
@@ -395,7 +398,7 @@ static void build_approval(void)
     p->ap_risk_banner = block(card, 44, 12, 120, 30, UI_YELLOW);
     lv_obj_set_style_border_width(p->ap_risk_banner, 2, 0);
     lv_obj_set_style_border_color(p->ap_risk_banner, lv_color_hex(UI_BORDER), 0);
-    p->ap_risk_label = mk_label(p->ap_risk_banner, "审批", &voice_font_20, UI_ON_ACCENT);
+    p->ap_risk_label = mk_label(p->ap_risk_banner, "审批", &buddy_font_16, UI_ON_ACCENT);
     lv_obj_center(p->ap_risk_label);
 
     p->ap_title = mk_label(card, "", &buddy_font_16, UI_TEXT);

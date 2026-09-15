@@ -45,17 +45,21 @@ static bool token_ok(httpd_req_t *req) {
 static const char *PAGE = R"html(<!DOCTYPE html><html lang='zh'><head>
 <meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>首页配置</title><style>
-body{font-family:ui-monospace,monospace;background:#03120b;color:#a8edbb;max-width:420px;margin:0 auto;padding:16px}
-h2{font-size:18px;margin:8px 0}label{display:block;font-size:13px;color:#80af90;margin:12px 0 4px}
-input[type=text]{width:100%;box-sizing:border-box;padding:10px;border:1px solid #37694b;border-radius:0;background:#091e14;color:#a8edbb;font-size:15px}
-button{margin-top:12px;width:100%;padding:12px;border:0;border-radius:0;background:#edbc73;color:#03120b;font-size:16px;font-weight:600}
-button.grey{background:#37694b;color:#a8edbb}
-#st{margin-top:12px;font-size:13px;color:#80af90;min-height:18px;text-align:center;word-break:break-all}
-#vp{position:relative;width:192px;height:300px;margin:8px auto 0;overflow:hidden;background:#091e14;touch-action:none}
+body{font-family:ui-monospace,monospace;background:#181b1c;color:#eee7d6;max-width:420px;margin:0 auto;padding:16px}
+h2{font-size:18px;margin:8px 0}label{display:block;font-size:14px;color:#b3b2a5;margin:12px 0 4px}
+input[type=text]{width:100%;box-sizing:border-box;padding:10px;border:1px solid #59605d;border-radius:0;background:#202526;color:#eee7d6;font-size:16px}
+button{margin-top:12px;width:100%;padding:12px;border:0;border-radius:0;background:#ddb36c;color:#181b1c;font-size:16px;font-weight:600}
+button.grey{background:#59605d;color:#eee7d6}
+#st{margin-top:12px;font-size:14px;color:#b3b2a5;min-height:18px;text-align:center;word-break:break-all}
+#vp{position:relative;width:192px;height:300px;margin:8px auto 0;overflow:hidden;background:#202526;touch-action:none}
 #pv{position:absolute;left:0;top:0;pointer-events:none;user-select:none;-webkit-user-drag:none}
 #zm{display:block;width:192px;margin:6px auto 0}
-#binc{display:block;margin:6px auto 0;width:96px;height:150px;background:#03120b;image-rendering:pixelated}
-#cap{margin:4px 0 0;font-size:12px;color:#80af90;text-align:center}
+#binc{display:block;margin:6px auto 0;width:96px;height:150px;background:#181b1c;image-rendering:pixelated}
+#cap{margin:4px 0 0;font-size:12px;color:#b3b2a5;text-align:center}
+
+/* Travel instrument: unboxed editorial headings; inputs retain affordance. */
+h1,h2,h3{letter-spacing:.04em;font-weight:600;line-height:1.25}
+p{line-height:1.65}
 </style></head><body>
 <h2>AI 护照 · 首页配置</h2>
 <label>姓名</label><input type='text' id='name' maxlength='9'>
