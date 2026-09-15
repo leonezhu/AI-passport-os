@@ -111,7 +111,7 @@ function binPreview(){const c=$('binc'),g=c.getContext('2d');
  drawCrop(tmp.getContext('2d'));
  const d=tmp.getContext('2d').getImageData(0,0,96,150).data,o=g.createImageData(96,150);
  for(let i=0;i<d.length;i+=4){const l=(d[i]*77+d[i+1]*151+d[i+2]*28)>>8;
-  o.data[i]=140;o.data[i+1]=245;o.data[i+2]=166;o.data[i+3]=l>=110?255:36}
+  o.data[i]=238;o.data[i+1]=231;o.data[i+2]=214;o.data[i+3]=l>=110?255:36}
  g.putImageData(o,0,0)}
 $('file').onchange=e=>{const f=e.target.files[0];if(!f)return;
 const img=new Image();img.onload=()=>{$('pv').src=img.src;hasImg=true;
