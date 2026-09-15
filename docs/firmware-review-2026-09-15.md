@@ -4,7 +4,7 @@
 
 Base: `manchunx7-bit/passport-os`, `main`, `e5dd58223d62c2be5de6ffcb370b0fcb7b04b11d`.
 
-This is a source patch awaiting a full ESP-IDF build and hardware acceptance. Initial publication was blocked by automatic approval review; the user subsequently authorized a feature branch, draft PR and firmware build. There is no verified flashable binary.
+The changes pass a complete ESP-IDF 5.5.3 build, image merge and protected partition verification. They are published on `feature/retro-firmware-20260915` in [draft PR #1](https://github.com/manchunx7-bit/passport-os/pull/1). Hardware acceptance remains outstanding; main has not been merged.
 
 ## Changes
 
@@ -17,6 +17,7 @@ This is a source patch awaiting a full ESP-IDF build and hardware acceptance. In
 - Publish Wi-Fi task handles before allowing workers to execute, recover the UI after task-creation failure, and recheck the active page before returning from successful configuration.
 - Match the next Tetris piece preview to its actual colour.
 - Restore shell executable bits and the missing host-test entry points. Keep existing repository governance checks intact.
+- Share C linkage font declarations to fix the radio compilation failure. Use a concrete 8MB flash size for offline merging. Align the verifier with the actual `passport-os.bin` name and committed partition table, including the 4MiB factory partition, while retaining cardid and recovery-area protection. Add a partition-fixture consistency regression.
 
 The upload token is delivered by the device landing page. This is an interface consistency repair, not a replacement for authentication or secure pairing.
 
@@ -26,10 +27,12 @@ The upload token is delivered by the device landing page. This is an interface c
 
 The repository audit still fails on pre-existing missing governance documents, dependency lock, broken links and language peers. These checks were not removed. The original firmware job `104394330260` failed with `./tools/validate.sh: Permission denied`, before compilation.
 
-No complete ESP-IDF build, actual LVGL screenshot, or on-device test has been performed. Local tools lack ESP-IDF 5.5.3, and the publication block prevents CI for this revision. Host fixtures do not validate an actual firmware image.
+[Firmware run 34978238572](https://github.com/manchunx7-bit/passport-os/actions/runs/34978238572) passed for code commit `fd73397fc8693b814390ae6095aa87e42cdf22f1`. The application is 3,083,696 / 4,194,304 bytes, leaving approximately 26% of its partition free. Bootloader, partition-table and application comparisons and protected-layout checks all passed; the merged image is 3,149,232 bytes. The run provides artifact `firmware-34978238572`, containing `FoloToy-AI-Passport-full.bin`, retained until 2026-09-22. Subsequent documentation-only commits do not alter these firmware sources.
+
+The hardware-independent regression step also passed in CI. The separate repository audit still fails for the pre-existing missing files and links described above. No actual LVGL screenshot or on-device test has been performed; build success does not establish hardware acceptance.
 
 ## Remaining work
 
 Review SPIFFS auto-format-on-mount-failure and avatar replacement recovery; add explicit Wi-Fi session lifetimes for workers that survive stop timeouts; check weather snapshot concurrency and numerical bounds; improve allocation/storage failure feedback; restore accurate upstream project documents and dependency locks.
 
-Acceptance requires a complete ESP32-C3 build with protected partition verification, all-page inspection at 240x320, wake tests for all keys, at least 30 app-switch cycles, interrupted profile uploads, Wi-Fi failure/re-entry tests, long voice replies, ten-minute radio playback, and both games. Build success and hardware success must remain separate claims. The Chinese companion provides the detailed issue table and acceptance sequence.
+The complete ESP32-C3 build and protected partition verification have passed. Remaining acceptance includes all-page inspection at 240x320, wake tests for all keys, at least 30 app-switch cycles, interrupted profile uploads, Wi-Fi failure/re-entry tests, long voice replies, ten-minute radio playback, and both games. Keep the PR in draft pending this acceptance. The Chinese companion provides the detailed issue table and acceptance sequence.
