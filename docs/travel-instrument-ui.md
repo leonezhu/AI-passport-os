@@ -1,6 +1,13 @@
 # Passport: travel instrument UI
 
-Base: main `d19caf6439bfa64441d458927a83fccc67526634`. This iteration supersedes the green-terminal visual direction in the previous review; the previous functional fixes remain in place.
+Base: main `d19caf6439bfa64441d458927a83fccc67526634`. The previous functional fixes remain in place. The device now keeps both refined visual directions as selectable themes.
+
+## 双主题
+
+- **经典绿磷光**：恢复上一版的近黑绿底、磷光绿文字与更明显的终端框线。
+- **复古旅行仪器**：炭黑、暖白与琥珀色，采用更开放的标题和内容排版。
+- 两套主题共用全部页面、字体、图片和显示缓冲，只保存两张十色调色板与一个当前主题值。设置中的“外观主题”可以即时切换，选择写入 NVS，重启后继续使用；恢复默认设置会回到旅行仪器。
+- 用户已在实机验证旅行仪器版本，反馈运行和显示没有问题。经典绿磷光及新增切换流程仍需在最终固件上实机复测。
 
 ## 视觉规则
 
@@ -27,6 +34,8 @@ Base: main `d19caf6439bfa64441d458927a83fccc67526634`. This iteration supersedes
 
 没有新增字体位图、图片资源、全屏离屏缓冲或常驻背景动画。首页减少一个重复标签、增加一个身份标签；抽屉删除八个装饰对象、增加一个目录标签。其他页面复用现有控件，主要修改样式和布局。页面常驻对象数量没有因装饰扩张；字符串和样式属性仍可能改变少量内存占用，不能把对象数直接换算成实测堆内存收益。
 
-完整构建结果和产物链接记录在草稿 PR。需比较新旧应用二进制大小及分区余量；不改变屏幕缓冲、硬件引脚或分区表。
+双主题提交 `b5dd137fba4754c16c9d9a63dd1a8ab29243c323` 已通过 ESP-IDF 5.5.3 完整编译、镜像合并和分区保护校验。应用为 3,038,992 字节，相比单一旅行仪器版本增加 1,008 字节；4 MiB 应用分区仍剩约 28%。两张调色板本身占 80 字节只读数据，另有一个活动主题状态值和一个 NVS 键。不改变屏幕缓冲、硬件引脚或分区表。
+
+构建与固件产物见 [GitHub Actions 34987914612](https://github.com/manchunx7-bit/passport-os/actions/runs/34987914612)。
 
 主机回归测试通过。实物验收仍需要：240×320 逐页检查长姓名/SSID/中英文混排、语音全部状态及长回复、最低亮度可读性；循环切换全部应用记录最小空闲堆与最大连续块。没有实物测量前，不宣称已验证峰值 RAM、功耗或所有页面的渲染效果。
