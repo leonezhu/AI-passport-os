@@ -3,7 +3,11 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const source = fs.readFileSync('main/apps/home/home_upload.cc', 'utf8');
-const script = source.match(/<script>\n([\s\S]*?)<\/script><\/body>/)[1];
+// The checkout may use LF (Linux CI) or CRLF (Windows workspace mounted in
+// WSL). Keep the test about the embedded page behavior, not line endings.
+const match = source.match(/<script>\r?\n([\s\S]*?)<\/script><\/body>/);
+assert.ok(match, 'embedded profile page script was not found');
+const script = match[1];
 const elements = new Map();
 const get = id => {
   if (!elements.has(id)) elements.set(id, {value:'',textContent:'',style:{}});

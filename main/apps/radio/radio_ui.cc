@@ -83,6 +83,13 @@ constexpr const char *kSymbolKeys[] = {
     ":", ";", "(", ")", "[", "]", "abc", "ABC", "<", "GO",
 };
 
+static_assert(sizeof(kLowerKeys) / sizeof(kLowerKeys[0]) <= kWifiMaxKeys,
+              "lower-case Wi-Fi keyboard exceeds allocated key slots");
+static_assert(sizeof(kUpperKeys) / sizeof(kUpperKeys[0]) <= kWifiMaxKeys,
+              "upper-case Wi-Fi keyboard exceeds allocated key slots");
+static_assert(sizeof(kSymbolKeys) / sizeof(kSymbolKeys[0]) <= kWifiMaxKeys,
+              "symbol Wi-Fi keyboard exceeds allocated key slots");
+
 lv_obj_t *s_screen;
 lv_timer_t *s_ui_timer;
 lv_obj_t *s_main_group;
@@ -987,6 +994,7 @@ void update_wifi_keyboard(const char *ssid, std::size_t password_length,
                                 lv_color_hex(password_length ? kText : kMuted), 0);
 
     const std::size_t key_count = radio_ui_wifi_key_count(page);
+    if (key_count > 0) selected %= key_count;
     for (std::size_t i = 0; i < kWifiMaxKeys; ++i) {
         if (i >= key_count) {
             lv_obj_add_flag(s_wifi_key_box[i], LV_OBJ_FLAG_HIDDEN);
@@ -994,16 +1002,29 @@ void update_wifi_keyboard(const char *ssid, std::size_t password_length,
         }
         lv_obj_remove_flag(s_wifi_key_box[i], LV_OBJ_FLAG_HIDDEN);
         const bool active = i == selected;
-        ui_pixel_set_selected(s_wifi_key_box[i], active, true);
+        // The keyboard uses the label itself as the key box to keep LVGL heap
+        // usage bounded. ui_pixel_set_selected() only changes a border color;
+        // labels have no border width by default. kAmberSoft and kPanelSoft
+        // also both resolve to UI_SURFACE_ALT, so the old code rendered active
+        // and inactive keys identically even though the selection index moved.
+        // Give the focused key an explicit high-contrast fill and border so
+        // the three physical buttons provide visible feedback on every click.
         lv_obj_set_style_bg_color(s_wifi_key_box[i],
-                                  lv_color_hex(active ? kAmberSoft : kPanelSoft), 0);
+                                  lv_color_hex(active ? UI_AMBER : kPanelSoft), 0);
+        lv_obj_set_style_border_width(s_wifi_key_box[i], active ? 2 : 0, 0);
+        lv_obj_set_style_border_color(s_wifi_key_box[i],
+                                      lv_color_hex(active ? UI_TEXT : UI_BORDER), 0);
         lv_label_set_text(s_wifi_key_label[i], radio_ui_wifi_key(page, i));
         lv_obj_set_style_text_color(s_wifi_key_label[i],
-                                    lv_color_hex(kText), 0);
+                                    lv_color_hex(active ? UI_BG : kText), 0);
     }
 
+    char navigation[72];
+    const char *selected_key = key_count > 0 ? radio_ui_wifi_key(page, selected) : "";
+    std::snprintf(navigation, sizeof(navigation), "KEY [%s]  +/-移动  OK输入",
+                  selected_key);
     lv_label_set_text(s_wifi_keyboard_status,
-                      status && status[0] ? status : "+/-移动  OK输入  长按OK返回");
+                      status && status[0] ? status : navigation);
     lv_obj_set_style_text_color(s_wifi_keyboard_status,
                                 lv_color_hex(status && status[0] ? kRed : UI_TEXT), 0);
 }
