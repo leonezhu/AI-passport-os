@@ -1,0 +1,51 @@
+[简体中文](README.zh_CN.md) · English
+
+# Passport OS
+
+Community firmware for the FoloToy AI Passport based on ESP32-C3 with 8 MB
+flash. It includes the multi-app UI, Wi-Fi setup, Xiaozhi AI, radio, games, and
+the Windows hardware-microphone/hotkey bridge integration.
+
+## Install
+
+Download `FoloToy-AI-Passport-full.bin` from the latest GitHub Release and
+write the merged image at address `0x0`. Confirm that the target is the same
+ESP32-C3 / 8 MB AI Passport hardware revision before flashing. A full-image
+flash may replace the device's local Wi-Fi and application settings; back up
+anything you need first.
+
+The release workflow builds with ESP-IDF 5.5.3, verifies the merged image and
+protected partition layout, then publishes that exact binary. Build success is
+not a substitute for testing audio, buttons, battery reporting and networking
+on the physical device.
+
+For the Windows hardware microphone and right-Shift/Enter bridge, see
+[folo-ai-passport-voice](https://github.com/manchunx7-bit/folo-ai-passport-voice).
+
+## Privacy
+
+Release firmware is built from tracked source and does not contain the
+maintainer's Wi-Fi password, API keys or local device settings. User settings
+are created on the target device after installation. Never commit local
+credentials or configuration exports.
+
+## Build and verify
+
+```bash
+source <ESP-IDF-5.5.3>/export.sh
+./tools/validate.sh --static
+./tools/validate.sh --firmware
+```
+
+The firmware target is `esp32c3`. The merged image is written to
+`build/FoloToy-AI-Passport-full.bin`.
+
+## Compatibility and risk
+
+- Supported target: matching FoloToy AI Passport, ESP32-C3, 8 MB flash.
+- Do not flash onto merely similar-looking boards with a different flash size,
+  display, pin map, codec, battery circuit or partition table.
+- Keep a known-good recovery image. Power loss, a wrong port, or an incorrect
+  target during flashing can require recovery.
+- Community users must configure their own Wi-Fi and service credentials.
+

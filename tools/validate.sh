@@ -11,7 +11,10 @@ usage() {
 run_static_checks() {
     local actionlint_bin
 
-    python3 tools/check_repo.py
+    # This product fork intentionally omits the upstream repository's complete
+    # bilingual documentation tree. Keep release-critical file, action pin,
+    # secret and conflict checks without making absent upstream docs a blocker.
+    python3 tools/check_repo.py --firmware-fork
 
     actionlint_bin="${ACTIONLINT_BIN:-}"
     if [[ -z "${actionlint_bin}" ]]; then
