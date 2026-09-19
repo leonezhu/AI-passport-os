@@ -17,6 +17,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "launcher/app_registry.h"
 #include <atomic>
 
 static const char *TAG = "app_voice";
@@ -175,6 +176,10 @@ void voice_worker_task(void *arg) {
         uint64_t now_ms = esp_timer_get_time() / 1000;
         bool state_changed = (s_voice_state.state != last_state);
         bool recording = (s_voice_state.state == APP_ST_LISTENING);
+        bool transcribing = (s_voice_state.state == APP_ST_TRANSCRIBING);
+        if (recording || transcribing) {
+            app_registry_keep_awake(); /* 录音与语音对话进行中持续抑制息屏，避免中断长对话流程 */
+        }
         bool time_to_tick = (now_ms - last_render_ms >= (recording ? 200 : 500));
 
         if (had_event || state_changed || time_to_tick) {

@@ -230,13 +230,9 @@ typedef struct {
 // 重叠(前几帧录进 440Hz),只发生在退化路径,可接受。兜底触发在串口留痕
 // (main.c 心跳里辨认 STREAM_START),下次再慢可直接看日志而不是猜。
 #define APP_TONE_PENDING_TIMEOUT_MS 200u
-// PTT 最长单次说话(2026-08-29 新增):LISTENING 原本是唯一没有退出超时的状态
-// —— 松开事件一旦丢了(on_key 走 post_important(100ms),队列满仍可能丢),设备就
-// 永久 LISTENING:一直采集、一直占着会话 PM 锁(进不了低功耗)、Mac 侧挂着永不
-// 收束的 voice 流,只能靠断电恢复。到点按"正常松手"收束(STREAM_STOP +
-// SEND_VOICE_END,已录的照常转写),不当错误处理 —— 真人一口气说不到 60s,正常
-// 使用永远碰不到这条路径。
-#define APP_PTT_MAX_TALK_MS     60000u
+// PTT 最长单次说话保护上限: 放宽至 10 分钟 (600秒)，支持长时间连续自然语音输入，
+// 同时防止极端物理按键卡死耗尽电池。
+#define APP_PTT_MAX_TALK_MS     600000u
 
 #ifdef __cplusplus
 }

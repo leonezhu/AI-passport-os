@@ -496,6 +496,8 @@ static void handle_tick(app_state_t *s, uint64_t now_ms, app_action_t *out, uint
     const uint64_t elapsed = now_ms - s->state_since_ms;
     switch (s->state) {
     case APP_ST_LISTENING:
+        // 录音持续期间刷新按键活动时间戳，确保长对话期间或松手后不会立即判定为超时息屏
+        s->last_key_ms = now_ms;
         // S3 兜底:滴声队列满/声音任务异常 → TONE_DONE 永不来的场景,超时强制开流
         // (宁可无滴声也不让 PTT 卡死无声)。
         if (!s->stream_started && elapsed >= APP_TONE_PENDING_TIMEOUT_MS) {
