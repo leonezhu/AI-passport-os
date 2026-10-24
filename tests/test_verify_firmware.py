@@ -21,7 +21,26 @@ def table():
     raw += b'\xeb\xeb' + b'\xff' * 14 + hashlib.md5(raw).digest()
     return raw.ljust(v.PARTITION_TABLE_SIZE, b'\xff')
 
+def elf(heap_start):
+    names = b'\0.shstrtab\0.dram0.bss\0.dram0.heap_start\0'
+    shoff = v.ELF_HEADER.size + len(names)
+    # name, type, flags, addr, offset, size
+    sections = [(0, 0, 0, 0, 0, 0), (1, 3, 0, 0, v.ELF_HEADER.size, len(names)),
+                (11, 8, 0, 0x3fc8f150, 0, 0x1dde0), (22, 1, 0, heap_start, 0, 0)]
+    raw = v.ELF_HEADER.pack(b'\x7fELF\x01\x01\x01'.ljust(16, b'\0'), 2, 0xf3, 1, 0, 0, shoff, 0,
+                            v.ELF_HEADER.size, 0, 0, v.ELF_SECTION.size, len(sections), 1)
+    return raw + names + b''.join(v.ELF_SECTION.pack(*s, 0, 0, 1, 0) for s in sections)
+
 class FirmwareTests(unittest.TestCase):
+    def test_sram_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / 'passport-os.elf').write_bytes(elf(v.HEAP_REGION_END - v.MIN_STATIC_HEAP))
+            self.assertEqual(v.elf_sections(elf(0x3fcacf30))['.dram0.bss'], (0x3fc8f150, 0x1dde0))
+            v.verify_sram_budget(path)
+            (path / 'passport-os.elf').write_bytes(elf(v.HEAP_REGION_END - v.MIN_STATIC_HEAP + 1))
+            with self.assertRaises(ValueError): v.verify_sram_budget(path)
+
     def test_table(self):
         self.assertTrue(v.parse_partition_table(table())[1])
         with self.assertRaises(ValueError): v.parse_partition_table(table()[:500])

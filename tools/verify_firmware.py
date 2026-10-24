@@ -25,6 +25,14 @@ CARDID_SIZE = 0x4000
 RECOVERY_OFFSET = 0x700000
 RECOVERY_SIZE = 0x100000
 ENTRY = struct.Struct("<HBBII16sI")
+# ESP32-C3 has no PSRAM: IRAM code, .data and .bss all come out of the same SRAM
+# block that becomes the first heap region (heap_init "At <heap_start> ... RAM").
+# Option C (-Os + IRAM to flash) left ~78 KB there; the old -Og build had ~37 KB
+# and failed AAC/MP3/TLS allocations. Keep ~4 KB of slack for normal growth.
+HEAP_REGION_END = 0x3FCC0000
+MIN_STATIC_HEAP = 72 * 1024
+ELF_HEADER = struct.Struct("<16sHHIIIIIHHHHHH")
+ELF_SECTION = struct.Struct("<IIIIIIIIII")
 
 
 @dataclass(frozen=True)
@@ -128,6 +136,39 @@ def verify_protected_layout(merged: bytes, build_dir: Path) -> None:
     print(f"Protected firmware layout: PASS (app {app_size} / {APP_MAX_SIZE} bytes)")
 
 
+def elf_sections(raw: bytes) -> dict[str, tuple[int, int]]:
+    """Return {name: (address, size)} from a little-endian ELF32 image."""
+    if raw[:4] != b"\x7fELF" or raw[4] != 1 or raw[5] != 1:
+        raise ValueError("application ELF is not little-endian ELF32")
+    header = ELF_HEADER.unpack_from(raw, 0)
+    shoff, shentsize, shnum, shstrndx = header[6], header[11], header[12], header[13]
+    entries = [ELF_SECTION.unpack_from(raw, shoff + index * shentsize) for index in range(shnum)]
+    names = entries[shstrndx]
+    strings = raw[names[4] : names[4] + names[5]]
+    return {
+        strings[entry[0] : strings.index(b"\0", entry[0])].decode("ascii"): (entry[3], entry[5])
+        for entry in entries
+    }
+
+
+def verify_sram_budget(build_dir: Path) -> None:
+    """Fail when static SRAM use leaves too little room for the first heap region."""
+    sections = elf_sections((build_dir / "passport-os.elf").read_bytes())
+    if ".dram0.heap_start" not in sections:
+        raise ValueError("application ELF has no .dram0.heap_start section")
+    heap = HEAP_REGION_END - sections[".dram0.heap_start"][0]
+    usage = ", ".join(
+        f"{name} {sections.get(name, (0, 0))[1]}"
+        for name in (".iram0.text", ".dram0.data", ".dram0.bss")
+    )
+    if heap < MIN_STATIC_HEAP:
+        raise ValueError(
+            f"first heap region is {heap} bytes; budget is {MIN_STATIC_HEAP} ({usage}). "
+            "Check -Os, IRAM placement and new static buffers before raising the budget"
+        )
+    print(f"SRAM budget: PASS (first heap region {heap} / min {MIN_STATIC_HEAP} bytes; {usage})")
+
+
 def main() -> int:
     build_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "build").resolve()
     merged_path = build_dir / "FoloToy-AI-Passport-full.bin"
@@ -160,6 +201,7 @@ def main() -> int:
 
     try:
         verify_protected_layout(merged, build_dir)
+        verify_sram_budget(build_dir)
     except (OSError, UnicodeDecodeError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
