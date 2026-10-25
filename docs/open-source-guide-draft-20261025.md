@@ -1,6 +1,6 @@
-# Passport OS 社区安装说明（草案）
+# Passport OS 社区安装说明
 
-这是给普通用户的安装说明草案。使用预编译固件不需要安装 AI 工具；下载固件、烧录到匹配硬件，再完成首次配网即可。
+这是给普通用户的安装说明。使用预编译固件不需要安装 AI 工具；下载固件、烧录到匹配硬件，再完成首次配网即可。返回 [项目首页](../README.md) 可查看应用清单和 DIY 开发入口。
 
 ## 适用设备
 
@@ -78,15 +78,16 @@ py -m esptool --chip esp32c3 --port COM3 --baud 460800 write-flash `
 源码开发者需要 ESP-IDF 5.5.3、Python 3、Git，以及 Linux、WSL 或其他能够运行 ESP-IDF 的环境：
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/manchunx7-bit/passport-os.git
 cd passport-os
-source <ESP-IDF-5.5.3>/export.sh
 bash build.sh release
 ```
 
-完整镜像输出到 `build/FoloToy-AI-Passport-full.bin`，应用镜像输出到 `build/passport-os.bin`。构建前会根据 `dependencies.lock` 获取 ESP-IDF 组件；不要把本机 `managed_components/` 或生成的 `sdkconfig` 提交到仓库。
+`bash build.sh release` 默认从 `/opt/esp-idf` 加载环境；如果 ESP-IDF 安装在其他目录，使用 `IDF_DIR=/实际路径/esp-idf bash build.sh release` 指定。
 
-验证命令：
+此命令的完整镜像输出到 `build-public/FoloToy-AI-Passport-full.bin`，应用镜像输出到 `build-public/passport-os.bin`。构建前会根据 `dependencies.lock` 获取 ESP-IDF 组件；不要把本机 `managed_components/` 或生成的 `sdkconfig` 提交到仓库。
+
+在已激活 ESP-IDF 5.5.3 的环境中执行验证：
 
 ```bash
 bash tools/test-host.sh
