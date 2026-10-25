@@ -1,9 +1,3 @@
-option(PASSPORT_MUSE_USE_JOLLYBOT "Build Muse with the official Jollybot artwork" ON)
-if(PASSPORT_MUSE_USE_JOLLYBOT)
-    set(PASSPORT_MUSE_AVATAR "apps/muse/muse_avatar_frames.c")
-else()
-    set(PASSPORT_MUSE_AVATAR "apps/muse/muse_avatar_public_frames.c")
-endif()
 idf_component_register(
     EMBED_TXTFILES "apps/home/phone_setup.html"
     EMBED_FILES "apps/home/cities.json.gz"
@@ -63,24 +57,12 @@ idf_component_register(
         "apps/home/band_art.c"
         "apps/home/home_upload.cc"
         "apps/home/app_home.cc"
-        "apps/game/game_core.c"
-        "apps/game/game_mic.c"
-        "apps/game/game_sfx.c"
-        "apps/game/app_game.cc"
-        "apps/sound_jump/jump_core.c"
-        "apps/sound_jump/jump_voice.c"
-        "apps/sound_jump/jump_mic.c"
-        "apps/sound_jump/app_sound_jump.cc"
         "apps/stopwatch/stopwatch_core.c"
         "apps/stopwatch/app_stopwatch.cc"
         "apps/pomodoro/pomodoro_core.c"
         "apps/pomodoro/app_pomodoro.cc"
         "apps/pomodoro/pomodoro_font_20.c"
         "apps/pomodoro/pomodoro_digits_48.c"
-        "apps/muse/app_muse.cc"
-        "${PASSPORT_MUSE_AVATAR}"
-        "apps/game/tetris_core.c"
-        "apps/game/app_tetris.cc"
     INCLUDE_DIRS
         "."
         "launcher"
@@ -89,11 +71,9 @@ idf_component_register(
         "apps/voice"
         "apps/xiaozhi"
         "apps/home"
-        "apps/game"
         "ui"
         "fonts"
     REQUIRES
-        passport_muse
         bsp
         esp-wifi-connect
         esp_wifi

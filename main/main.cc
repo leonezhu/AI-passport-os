@@ -20,7 +20,6 @@
 #include "ui/ui_capture.h"
 #include "apps/pomodoro/app_pomodoro.h"
 #include "esp_log.h"
-#include "passport_muse.h"
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_heap_caps.h"
@@ -297,16 +296,8 @@ static void handle_serial_command(int c) {
     } else if (c == 'h') {
         // 诊断版专用:逐块打印内部堆及其所属任务,用于比对应用退出前后的残留。
         bsp_memory_map();
-    } else if (c == 'j') {
-        app_registry_switch_to(APP_ID_SOUND_JUMP);
     } else if (c == 't') {
         app_registry_switch_to(APP_ID_POMODORO);
-    } else if (c == 'm') {
-        app_registry_switch_to(APP_ID_MUSE);
-    } else if (c == 'M') {
-        if (app_registry_get_active() == APP_ID_MUSE) passport_muse_diagnostic_ble_cycle();
-    } else if (c == '?') {
-        passport_muse_log_diagnostics();
     } else if (c >= '1' && c <= '9') {
         int target_id = c - '0';
         ESP_LOGI(TAG, "[SerialCmd] Direct switch to App ID %d", target_id);

@@ -17,11 +17,7 @@ typedef enum {
     APP_ID_WIFI,
     APP_ID_SETTINGS,
     APP_ID_HOME,
-    APP_ID_GAME,
-    APP_ID_TETRIS,
     APP_ID_STOPWATCH,
-    APP_ID_SOUND_JUMP,
-    APP_ID_MUSE,
     APP_ID_POMODORO,
     APP_ID_COUNT
 } passport_app_id_t;

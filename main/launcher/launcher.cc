@@ -183,14 +183,6 @@ void draw_app_icon(passport_app_id_t id, uint32_t color) {
             set_part(5, 38, 4, 12, 6, detail);      // 天线头
             set_part(6, 26, 64, 36, 6, warm);     // 围巾
             break;
-        case APP_ID_MUSE:
-                set_frame(0, 18, 18, 52, 46, color, 4);
-                set_part(1, 29, 31, 6, 12, color);
-                set_part(2, 53, 31, 6, 12, color);
-                set_part(3, 36, 53, 16, 4, color);
-                set_part(4, 6, 34, 8, 20, color);
-                set_part(5, 74, 34, 8, 20, color);
-                break;
         case APP_ID_WIFI:
             // 信号塔:四级阶梯(与其它图标的"方块"语言一致)
             set_part(0, 14, 56, 12, 18, color);
@@ -206,27 +198,6 @@ void draw_app_icon(passport_app_id_t id, uint32_t color) {
             set_part(3, 26, 14, 16, 18, color);
             set_part(4, 52, 35, 16, 18, detail);
             set_part(5, 22, 56, 16, 18, warm);
-            break;
-        case APP_ID_GAME:
-            // 你在狗叫什么: 像素狗头(柴犬大脸 + 双折耳 + 眼鼻 + 汪汪大嘴)
-            set_frame(0, 16, 26, 52, 38, color, 4);   // 狗脸主体
-            set_part(1, 10, 18, 14, 16, color);       // 左耳
-            set_part(2, 60, 18, 14, 16, color);       // 右耳
-            set_part(3, 26, 36, 8, 8, color);         // 左眼
-            set_part(4, 50, 36, 8, 8, color);         // 右眼
-            set_part(5, 38, 44, 8, 6, color);         // 黑鼻头
-            set_part(6, 32, 54, 20, 8, color);        // 汪汪张开的大嘴
-            break;
-        case APP_ID_SOUND_JUMP:
-            // Same four-legged Claude silhouette as the game, matching theme in launcher.
-            set_part(0, 14, 16, 60, 40, color);
-            set_part(1, 4, 36, 80, 12, color);
-            set_part(2, 14, 56, 6, 14, color);
-            set_part(3, 26, 56, 6, 14, color);
-            set_part(4, 56, 56, 6, 14, color);
-            set_part(5, 68, 56, 6, 14, color);
-            set_part(6, 26, 26, 6, 12, UI_BG);
-            set_part(7, 56, 26, 6, 12, UI_BG);
             break;
         case APP_ID_STOPWATCH:
             set_part(0, 34, 6, 20, 6, color);
@@ -250,19 +221,6 @@ void draw_app_icon(passport_app_id_t id, uint32_t color) {
             set_part(8, 46, 46, 12, 4, color);
             set_part(9, 42, 60, 4, 4, color);
             break;
-        case APP_ID_TETRIS:
-            // 俄罗斯方块:T/L/方 三种积木错落
-            set_frame(0, 12, 14, 30, 10, color, 3);   // T 横条
-            set_part(1, 22, 24, 10, 10, color);       // T 竖
-            set_part(2, 12, 44, 10, 10, color);       // L 竖
-            set_part(3, 12, 54, 10, 10, color);
-            set_part(4, 22, 54, 10, 10, color);
-            set_part(5, 48, 24, 10, 10, color);       // O 方块
-            set_part(6, 58, 24, 10, 10, color);
-            set_part(7, 48, 34, 10, 10, color);
-            set_part(8, 58, 34, 10, 10, color);
-            set_part(9, 40, 58, 38, 10, color);       // I 长条
-            break;
         default:
             break;
     }
@@ -279,8 +237,8 @@ void update_card_content() {
     uint32_t color = kPhos;
     if (ui_theme_is_multicolor()) {
         switch (app->id) {
-            case APP_ID_RADIO: case APP_ID_GAME: case APP_ID_POMODORO: color = UI_TERTIARY; break;
-            case APP_ID_VOICE: case APP_ID_TETRIS: color = UI_SECONDARY; break;
+            case APP_ID_RADIO: case APP_ID_POMODORO: color = UI_TERTIARY; break;
+            case APP_ID_VOICE: color = UI_SECONDARY; break;
             case APP_ID_XIAOZHI: case APP_ID_STOPWATCH: color = UI_SUCCESS; break;
             default: break;
         }
