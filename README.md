@@ -2,6 +2,14 @@
 
 # Passport OS
 
+## Why this project exists
+
+I started this project to turn the FoloToy AI Passport into a small device I would actually use every day and keep reaching for. After several rounds of selection and iteration, I collected ten of the functions and apps that fit my own daily use, while keeping enough room for experimentation and play.
+
+Thank you to everyone who has enjoyed the project and shared feedback. Many people have also suggested personal improvements. Because each person uses the device differently, open-sourcing the project is the most useful next step: you can DIY your own version, add the features you need, or remove the ones you do not.
+
+I hope this code and firmware give you a practical starting point for your own build, and that you have fun using and modifying it.
+
 Community firmware for the FoloToy AI Passport based on ESP32-C3 with 8 MB
 flash. It includes the multi-app UI, Wi-Fi setup, Xiaozhi AI, radio, games, and
 the Windows hardware-microphone/hotkey bridge integration.
