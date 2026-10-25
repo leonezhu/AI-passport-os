@@ -22,9 +22,7 @@ void refresh() {
     const auto ssid = passport::ssid_display(wifi.GetSsid(), &buddy_font_16);
     ui_pixel_label_set_text(s_ssid, wifi.IsConnected() ? ssid.c_str() : "未连接无线网络");
     const char *internet[] = {"未连接", "正在检查", "可以上网", "需网页登录", "无法上网"};
-    char proxy[32], age[32] = "暂无天气", synced[24] = "未校时";
-    uint16_t port = 0;
-    const int route = passport_muse_proxy_route_info(proxy, sizeof(proxy), &port);
+    char age[32] = "暂无天气", synced[24] = "未校时";
     const time_t last = time_sync_last_epoch() + time_sync_tz_offset_sec();
     if (time_sync_valid()) {
         struct tm tm{}; gmtime_r(&last, &tm);
