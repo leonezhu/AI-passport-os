@@ -22,7 +22,7 @@
 
 | 来源 | 用了什么 |
 | --- | --- |
-| [FoloToy](https://ai-passport.folotoy.cn/) | AI Passport 硬件、官方固件与刷机工具 |
+| [FoloToy](https://ai-passport.folotoy.cn/) | AI Passport 硬件、官方固件与刷机工具；开发文档见官方仓库 [FoloToy/ai-passport](https://github.com/FoloToy/ai-passport) |
 | [manchunx7-bit/passport-os](https://github.com/manchunx7-bit/passport-os) | 固件本体（MIT）：整机框架与全部保留应用 |
 | [manchunx7-bit/folo-ai-passport-voice](https://github.com/manchunx7-bit/folo-ai-passport-voice) | AI 随身语音的电脑端程序 |
 | [小智 AI](https://xiaozhi.me/) | 「小智 AI」应用的服务 |
@@ -45,3 +45,5 @@ IDF_DIR="$HOME/esp/esp-idf" bash build.sh release
 ## 接下来想加的
 
 想好了就做，没顺序承诺：晨报宠物、身体线打卡、番茄钟联动电脑端专注数据。
+
+怎么开发这个板子（硬件事实、编译命令、文档入口）记在 [docs/DEVELOPING.md](docs/DEVELOPING.md)，来源是官方仓库 [FoloToy/ai-passport](https://github.com/FoloToy/ai-passport)。
