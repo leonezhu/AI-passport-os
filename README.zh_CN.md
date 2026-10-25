@@ -13,6 +13,13 @@
 面向 FoloToy AI Passport（ESP32-C3、8 MB Flash）的社区固件，包含多应用系统、
 Wi-Fi 配网、小智 AI、收音机、游戏，以及 Windows 电脑端硬件麦克风与快捷键联动。
 
+## 关联开源项目
+
+此前单独开源的两个应用，也可以从以下项目查看源码和使用教程：
+
+- [Muse（ai-passport-muse）](https://github.com/manchunx7-bit/ai-passport-muse)：Muse 应用模块源码与使用教程。
+- [AI 随身语音（folo-ai-passport-voice）](https://github.com/manchunx7-bit/folo-ai-passport-voice)：随身语音应用源码、Windows 电脑端程序与使用教程。
+
 ## 下载与安装
 
 从最新 GitHub Release 下载 `FoloToy-AI-Passport-full.bin`，将完整合并镜像写入
@@ -27,9 +34,6 @@ Wi-Fi 配网、小智 AI、收音机、游戏，以及 Windows 电脑端硬件�
 Release 工作流固定使用 ESP-IDF 5.5.3，完成编译、合并镜像校验和受保护分区布局
 校验后，发布同一个二进制文件。编译通过不等于真机上的音频、按键、电池和网络
 已经全部验收。
-
-Windows 的“硬件麦克风 + 可配置语音快捷键”电脑端程序见
-[folo-ai-passport-voice](https://github.com/manchunx7-bit/folo-ai-passport-voice)。
 
 ## 隐私与隔离
 

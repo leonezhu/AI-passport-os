@@ -14,6 +14,13 @@ Community firmware for the FoloToy AI Passport based on ESP32-C3 with 8 MB
 flash. It includes the multi-app UI, Wi-Fi setup, Xiaozhi AI, radio, games, and
 the Windows hardware-microphone/hotkey bridge integration.
 
+## Related open-source projects
+
+These two apps were also released as standalone projects with source code and usage guides:
+
+- [Muse (ai-passport-muse)](https://github.com/manchunx7-bit/ai-passport-muse): Muse application module source and usage guide.
+- [AI Voice (folo-ai-passport-voice)](https://github.com/manchunx7-bit/folo-ai-passport-voice): voice application source, Windows companion program, and usage guide.
+
 ## Install
 
 Download `FoloToy-AI-Passport-full.bin` from the latest GitHub Release and
@@ -32,9 +39,6 @@ The release workflow builds with ESP-IDF 5.5.3, verifies the merged image and
 protected partition layout, then publishes that exact binary. Build success is
 not a substitute for testing audio, buttons, battery reporting and networking
 on the physical device.
-
-For the Windows hardware microphone and right-Shift/Enter bridge, see
-[folo-ai-passport-voice](https://github.com/manchunx7-bit/folo-ai-passport-voice).
 
 ## Privacy
 
