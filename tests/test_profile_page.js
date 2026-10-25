@@ -84,7 +84,7 @@ const posts=()=>requests.filter(r=>r.options.method==='POST');
  await get('reuse').onclick();const timeBody=JSON.parse(posts().at(-1).options.body);
  assert.equal(timeBody.saved,true);assert.equal(timeBody.ssid,'Test Wi-Fi');
  assert.ok(Number.isInteger(timeBody.epoch)&&Math.abs(timeBody.epoch-Date.now()/1000)<5);
- assert.equal(timeBody.tz_minutes,-new Date().getTimezoneOffset());
+ assert.equal(timeBody.tz_minutes,-new Date().getTimezoneOffset() || 0);
  state='failed';await context.poll();get('savedNetwork').value='';connectError='saved_not_found';
  const beforeRejectedTimer=nextTimer;
  await get('reuse').onclick();assert.equal(get('reuse').disabled,false);assert.match(get('networkStatus').textContent,/已保存网络/);
