@@ -134,6 +134,16 @@ bool app_protocol_parse(const char *json, size_t len, app_event_t *ev) {
         else if (strcmp(type->valuestring, "agent.approval_request") == 0) ok = parse_approval(root, ev);
         else if (strcmp(type->valuestring, "transcript") == 0)           ok = parse_transcript(root, ev);
         else if (strcmp(type->valuestring, "time.set") == 0)             ok = parse_time_set(root, ev);
+        else if (strcmp(type->valuestring, "pc.status") == 0) {
+            const cJSON *audio = cJSON_GetObjectItemCaseSensitive(root, "audioReady");
+            const cJSON *key = cJSON_GetObjectItemCaseSensitive(root, "hotkeyReady");
+            if (cJSON_IsBool(audio) && cJSON_IsBool(key)) {
+                ev->type = APP_EV_PC_STATUS;
+                ev->u.pc_status.audio_ready = cJSON_IsTrue(audio);
+                ev->u.pc_status.hotkey_ready = cJSON_IsTrue(key);
+                ok = true;
+            }
+        }
         // 未知 type:丢弃(返回 false,调用方记日志)
     }
     cJSON_Delete(root);

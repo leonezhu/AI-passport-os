@@ -13,9 +13,21 @@ extern "C" {
 // 初始化 codec 与 I2S。内部会调 bsp_i2c_init()(幂等),无需外部先调。
 esp_err_t bsp_audio_init(void);
 
+// RX-only, compact DMA ring for 16 kHz microphone streaming with TLS.
+// Deinit before changing profiles; bsp_audio_init retains duplex compatibility.
+esp_err_t bsp_audio_init_capture(void);
+// TX-only, normal playback DMA ring. No microphone channel is allocated.
+esp_err_t bsp_audio_init_playback(void);
+
+// Short system feedback may initialize only an idle codec. It must not reuse
+// another owner's device. The registry must await its shutdown before an app starts.
+esp_err_t bsp_audio_init_feedback(void);
+
 // 关闭并卸载 codec/I2S,归还 DMA 与 codec 占用的堆(开机音效等一次性用途)。
 // 之后的 bsp_audio_init() 可完整重建。运行中的 App 不得调用(会拆掉它的音频)。
 void bsp_audio_deinit(void);
+// Final power-off step only: close codec and retain its control lock until sleep.
+void bsp_audio_prepare_sleep(void);
 
 // 设置采样格式。同格式重复调用是廉价的(直接复用已打开的 codec)。
 //

@@ -1,21 +1,39 @@
+option(PASSPORT_MUSE_USE_JOLLYBOT "Build Muse with the official Jollybot artwork" ON)
+if(PASSPORT_MUSE_USE_JOLLYBOT)
+    set(PASSPORT_MUSE_AVATAR "apps/muse/muse_avatar_frames.c")
+else()
+    set(PASSPORT_MUSE_AVATAR "apps/muse/muse_avatar_public_frames.c")
+endif()
 idf_component_register(
+    EMBED_TXTFILES "apps/home/phone_setup.html"
+    EMBED_FILES "apps/home/cities.json.gz"
     SRCS
         "main.cc"
+        "apps/xiaozhi/opus_encoder_storage.cc"
         "boot_chime.c"
+        "ui_sfx.c"
+        "ui_sfx_tone.c"
         "boot_splash.c"
         "launcher/launcher.cc"
         "launcher/app_registry.cc"
         "launcher/wifi_setup.cc"
+        "launcher/wifi_picker.cc"
+        "launcher/network_diagnostics.cc"
+        "launcher/timer_resume.cc"
         "launcher/settings.cc"
+        "launcher/power.cc"
+        "launcher/system_overlay.cc"
         "fonts/radio_font.c"
         "fonts/radio_font_title.c"
         "fonts/buddy_font_16.c"
         "fonts/voice_font_20.c"
         "fonts/ui_font_20.c"
+        "fonts/home_font_12.c"
         "apps/radio/app_radio.cc"
         "apps/radio/radio_catalog.cc"
         "apps/radio/radio_display_settings.cc"
         "apps/radio/radio_player.cc"
+        "apps/radio/radio_source.cc"
         "apps/radio/radio_sleep_timer.cc"
         "apps/radio/radio_ui.cc"
         "apps/voice/app_voice.cc"
@@ -29,6 +47,7 @@ idf_component_register(
         "apps/voice/app_state.c"
         "apps/voice/time_sync.c"
         "ui/ui_pixel.c"
+        "ui/ui_capture.c"
         "apps/voice/ui_pixel_math.c"
         "apps/voice/mode.c"
         "apps/voice/nvs_settings.c"
@@ -48,6 +67,18 @@ idf_component_register(
         "apps/game/game_mic.c"
         "apps/game/game_sfx.c"
         "apps/game/app_game.cc"
+        "apps/sound_jump/jump_core.c"
+        "apps/sound_jump/jump_voice.c"
+        "apps/sound_jump/jump_mic.c"
+        "apps/sound_jump/app_sound_jump.cc"
+        "apps/stopwatch/stopwatch_core.c"
+        "apps/stopwatch/app_stopwatch.cc"
+        "apps/pomodoro/pomodoro_core.c"
+        "apps/pomodoro/app_pomodoro.cc"
+        "apps/pomodoro/pomodoro_font_20.c"
+        "apps/pomodoro/pomodoro_digits_48.c"
+        "apps/muse/app_muse.cc"
+        "${PASSPORT_MUSE_AVATAR}"
         "apps/game/tetris_core.c"
         "apps/game/app_tetris.cc"
     INCLUDE_DIRS
@@ -62,6 +93,7 @@ idf_component_register(
         "ui"
         "fonts"
     REQUIRES
+        passport_muse
         bsp
         esp-wifi-connect
         esp_wifi
@@ -73,9 +105,17 @@ idf_component_register(
         esp_codec_dev
         esp_audio_codec
         esp_timer
+        esp_pm
         spi_flash
         esp_driver_usb_serial_jtag
         esp_http_server
         spiffs
         lwip
 )
+target_link_options(${COMPONENT_LIB} INTERFACE
+    "-Wl,--undefined=__wrap_opus_encoder_create,--undefined=__wrap_opus_encoder_destroy"
+    "-Wl,--wrap=opus_encoder_create,--wrap=opus_encoder_destroy")
+
+if(PASSPORT_RADIO_HLS_TEST)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE PASSPORT_RADIO_HLS_TEST=1)
+endif()

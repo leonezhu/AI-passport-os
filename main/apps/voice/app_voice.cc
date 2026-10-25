@@ -10,6 +10,7 @@
 #include "apps/voice/time_sync.h"
 #include "apps/voice/nvs_settings.h"
 #include "bsp_battery.h"
+#include "bsp_audio.h"
 #include "bsp_display.h"
 #include "bsp_button.h"
 #include "esp_log.h"
@@ -18,6 +19,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "launcher/app_registry.h"
+#include "wifi_manager.h"
 #include <atomic>
 
 static const char *TAG = "app_voice";
@@ -28,7 +30,8 @@ std::atomic<bool> s_voice_active{false};
 std::atomic<bool> s_voice_ui_ready{false};
 // UI 存活开关:stop() 里先置 false 再删界面,避免超时未退出的任务继续渲染。
 std::atomic<bool> s_voice_ui_alive{false};
-std::atomic<bool> s_voice_transport_ready{false};
+std::atomic<bool> s_voice_transport_done{false};
+std::atomic<bool> s_voice_transport_failed{false};
 TaskHandle_t s_voice_task_handle = nullptr;
 app_state_t s_voice_state;
 bool s_voice_ui_initialized = false;
@@ -68,20 +71,15 @@ void run_voice_actions(const app_action_t *acts, uint8_t n) {
             break;
         case APP_ACT_SEND_KEY_ACTION:
             len = app_protocol_key_action(buf, sizeof(buf),
-                                          (app_key_action_t)a->u.key_action.action);
-            udp_audio_notify_event(buf, len);
-            break;
-        case APP_ACT_SEND_AGENT_ACTION:
-            len = app_protocol_agent_action(buf, sizeof(buf),
-                                            a->u.agent_action.task_id,
-                                            a->u.agent_action.decision);
-            udp_audio_notify_event(buf, len);
+                    static_cast<app_key_action_t>(a->u.key_action.action));
+            udp_audio_notify_event_blocking(buf, len, 100);
             break;
         case APP_ACT_STREAM_START:
             s_last_drop_count = 0;
             audio_streamer_set_sender(udp_audio_notify_audio);
             audio_streamer_set_compressed(true);
-            if (audio_streamer_start() != ESP_OK) {
+            if (bsp_audio_init() != ESP_OK || bsp_audio_set_format(16000, 16, 1) != ESP_OK ||
+                audio_streamer_start() != ESP_OK) {
                 app_event_t ev = {};
                 ev.type = APP_EV_AUDIO_ERROR;
                 app_event_post(&ev);
@@ -89,9 +87,11 @@ void run_voice_actions(const app_action_t *acts, uint8_t n) {
             break;
         case APP_ACT_STREAM_STOP:
             audio_streamer_stop();
+            audio_streamer_release_audio();
             break;
         case APP_ACT_STREAM_CANCEL:
             audio_streamer_cancel();
+            audio_streamer_release_audio();
             break;
         case APP_ACT_PLAY_TONE:
             app_sound_play((app_tone_t)a->u.tone);
@@ -113,11 +113,11 @@ void voice_worker_task(void *arg) {
     uint64_t last_render_ms = 0;
     uint64_t last_battery_ms = 0;
     int last_battery_soc = -1;
+    bool last_wifi_connected = false;
+    int8_t last_wifi_rssi = -127;
     app_stage_t last_state = APP_ST_COUNT;
-    // APP_EV_TICK 的 1s 节拍:在主循环 50ms 接收超时分支里投递。
-    // 原本 app_state.c:725 已有 TICK handler(驱动 PTT 60s 兜底/转写 30s
-    // 超时/分级息屏 20s+60s),但全仓零生产者 → 全部不触发(P0 必修)。
-    static uint64_t s_last_tick_ms = 0;
+    // Deadline checks run every 100ms, including during PC telemetry traffic.
+    uint64_t s_last_tick_ms = 0;
 
     // Build the minimal first page before the transport starts. Run at
     // idle priority during object creation so the task watchdog stays fed.
@@ -132,8 +132,13 @@ void voice_worker_task(void *arg) {
         ESP_LOGE(TAG, "Failed to acquire LVGL lock for UI init!");
     }
     s_voice_ui_ready.store(true);
-    while (s_voice_active.load() && !s_voice_transport_ready.load()) {
+    while (s_voice_active.load() && !s_voice_transport_done.load()) {
         vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    if (s_voice_transport_failed.load()) {
+        app_event_t failure{};
+        failure.type = APP_EV_INIT_FAILED;
+        app_state_reduce(&s_voice_state, &failure, esp_timer_get_time() / 1000, acts, &act_n);
     }
     vTaskPrioritySet(NULL, 4);
 
@@ -147,15 +152,16 @@ void voice_worker_task(void *arg) {
                 run_voice_actions(acts, act_n);
             }
             had_event = true;
-        } else {
-            // 50ms 接收超时:补一个 TICK(1s 节拍),让 PTT/转写/息屏超时真正生效。
-            // 队列里有事件时 TICK 自然推迟(覆盖全部超时语义,无需补偿)。
+        }
+        {
+            // Drive deadlines even when telemetry keeps the event queue busy.
             uint64_t tick_now = esp_timer_get_time() / 1000;
-            if (s_last_tick_ms == 0 || tick_now - s_last_tick_ms >= 1000) {
+            if (s_last_tick_ms == 0 || tick_now - s_last_tick_ms >= 100) {
                 s_last_tick_ms = tick_now;
                 app_event_t tick{};
                 tick.type = APP_EV_TICK;
-                app_event_post(&tick);
+                app_state_reduce(&s_voice_state, &tick, tick_now, acts, &act_n);
+                run_voice_actions(acts, act_n);
             }
         }
 
@@ -176,8 +182,7 @@ void voice_worker_task(void *arg) {
         uint64_t now_ms = esp_timer_get_time() / 1000;
         bool state_changed = (s_voice_state.state != last_state);
         bool recording = (s_voice_state.state == APP_ST_LISTENING);
-        bool transcribing = (s_voice_state.state == APP_ST_TRANSCRIBING);
-        if (recording || transcribing) {
+        if (recording) {
             app_registry_keep_awake(); /* 录音与语音对话进行中持续抑制息屏，避免中断长对话流程 */
         }
         bool time_to_tick = (now_ms - last_render_ms >= (recording ? 200 : 500));
@@ -191,9 +196,14 @@ void voice_worker_task(void *arg) {
 
             if (last_battery_ms == 0 || now_ms - last_battery_ms >= 10000) {
                 last_battery_soc = bsp_battery_soc();
+                auto &wifi = WifiManager::GetInstance();
+                last_wifi_connected = wifi.IsConnected();
+                last_wifi_rssi = last_wifi_connected ? wifi.GetRssi() : -127;
                 last_battery_ms = now_ms;
             }
             snap.battery_available = last_battery_soc >= 0 && last_battery_soc <= 100;
+            snap.wifi_connected = last_wifi_connected;
+            snap.wifi_rssi = last_wifi_rssi;
             snap.battery_soc = snap.battery_available
                                    ? static_cast<uint8_t>(last_battery_soc)
                                    : 0;
@@ -220,12 +230,28 @@ void voice_app_init(void) {
     nvs_settings_init();
     time_sync_init();
     app_events_init();
-    app_sound_init();
     app_state_init(&s_voice_state);
+}
+
+// The caller publishes the result only after rollback is complete. The UI
+// worker must never consume a peer beacon as readiness after local init fails.
+static bool start_voice_transport(void) {
+    if (udp_audio_init() != 0) {
+        udp_audio_deinit();
+        return false;
+    }
+    if (audio_streamer_init() != ESP_OK) {
+        audio_streamer_deinit();
+        udp_audio_deinit();
+        return false;
+    }
+    return true;
 }
 
 void voice_app_start(void) {
     ESP_LOGI(TAG, "Starting Voice App...");
+    xQueueReset((QueueHandle_t)app_events_queue());
+    app_state_init(&s_voice_state);
     s_voice_active.store(true);
     s_voice_ui_alive.store(true);
 
@@ -234,7 +260,8 @@ void voice_app_start(void) {
     // —— 见 docs/voice-udp-channel.md。
 
     s_voice_ui_ready.store(false);
-    s_voice_transport_ready.store(false);
+    s_voice_transport_done.store(false);
+    s_voice_transport_failed.store(false);
 
     // 1. 先在自己的大栈上把 UI 建好,再把运行时缓冲交给传输层。
     if (s_voice_task_handle == nullptr) {
@@ -262,23 +289,24 @@ void voice_app_start(void) {
         return;
     }
 
-    // 2. 启动 Wi-Fi UDP 通道(bind 33333,等 companion beacon 建立链路)
-    udp_audio_init();
+    const bool ready = start_voice_transport();
+    if (!ready) ESP_LOGE(TAG, "Voice transport initialization failed; exit and retry");
+    s_voice_transport_failed.store(!ready);
+    s_voice_transport_done.store(true);
+}
 
-    // 3. 初始化音频流管线 (静态4KB环)
-    audio_streamer_init();
-    s_voice_transport_ready.store(true);
+bool voice_app_prepare_stop(void) {
+    s_voice_active.store(false);
+    s_voice_ui_alive.store(false);
+    if (s_voice_task_handle != nullptr) return false;
+    // A slow worker still owns its codec and buffers. Keep that BSP ownership
+    // until both workers finish, before another app starts audio.
+    return audio_streamer_deinit();
 }
 
 void voice_app_stop(void) {
     ESP_LOGI(TAG, "Stopping Voice App and releasing UDP/Audio streamer...");
     s_voice_active.store(false);
-
-    // 1. 取消音频流
-    audio_streamer_cancel();
-
-    // 2. 停 RX 任务并关 socket(先置停止位等任务退出,再关 socket,避免竞态)
-    udp_audio_deinit();
 
     // 3. 等待主任务退出(2026-09-13 修复 C3:加 2s 上界 + 先撤 UI 开关,
     //    原来是无上界 while,跑在 input_task 里,卡住就是按键全失灵)
@@ -291,6 +319,17 @@ void voice_app_stop(void) {
     if (s_voice_task_handle != nullptr) {
         ESP_LOGW(TAG, "voice task did not exit in 2s; continue (no vTaskDelete)");
     }
+
+    // Worker no longer races stream start/end. Release the PC key before closing UDP.
+    audio_streamer_cancel();
+    audio_streamer_deinit();
+    audio_streamer_release_audio();
+    if (s_voice_state.state == APP_ST_LISTENING) {
+        char buf[64];
+        size_t len = app_protocol_voice_end(buf, sizeof(buf));
+        udp_audio_notify_event_blocking(buf, len, 100);
+    }
+    udp_audio_deinit();
 
     // 4. Restore the launcher and free Voice LVGL objects for the next app.
     bsp_lvgl_lock(-1);
@@ -327,18 +366,20 @@ void voice_app_on_key(uint8_t btn, app_btn_event_t event, uint16_t mv) {
         return;
     }
 
-    app_event_post(&ev);
+    // A dropped release must never leave capture running until the long timeout.
+    app_event_post_important(&ev, 100);
 }
 
 const passport_app_t g_voice_app = {
     .id = APP_ID_VOICE,
     .name = "随身 AI 语音",
     .en_name = "VOICE",
-    .desc = "按住说话 · 微信式桌面悬浮窗 · 物理审批手刹",
-    .tag = "Wi-Fi",
+    .desc = "按住上键说话\n文字输入到电脑光标处",
+    .tag = "需电脑",
     .theme_color = 0x4ED39A,
     .init = voice_app_init,
     .start = voice_app_start,
     .stop = voice_app_stop,
     .on_key = voice_app_on_key,
+    .prepare_stop = voice_app_prepare_stop,
 };

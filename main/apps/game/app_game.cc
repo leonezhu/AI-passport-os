@@ -31,8 +31,10 @@
 #include "apps/game/game_mic.h"
 #include "apps/game/game_sfx.h"
 #include "bsp_display.h"
+#include "bsp_audio.h"
 #include "launcher/app_registry.h"
 #include "ui_pixel.h"
+#include "bsp_battery.h"
 #include "fonts/app_fonts.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -100,9 +102,9 @@ constexpr int kVuH = 244;    // 34..278,不压到草地(GC_GROUND_Y=284)
 constexpr int kVuStep = 6;   // 高度量化步长,减少无意义的重绘
 
 // 提示语(单行,不换行 —— 原来 13 个汉字宽 221px 超过 216 会折成两行压在草地上)
-constexpr char kHintPlay[] = "叫↑ 静↓ OK拍爪";
-constexpr char kHintDead[] = "按 OK 接着叫";
-constexpr char kHintReady[] = "汪一声起飞";
+constexpr char kHintPlay[] = "出声升 · 安静降 · 确定跳";
+constexpr char kHintDead[] = "确定再来 · 长按确定返回";
+constexpr char kHintReady[] = "确定开始 · 长按确定返回";
 
 // ---------------------------------------------------------------------------
 // 配色(沿用整机像素风色板)
@@ -150,6 +152,8 @@ lv_obj_t *s_dog_mouth = nullptr;         // 动态拉伸嘴腔
 lv_obj_t *s_dog_tongue = nullptr;        // 吐舌头
 lv_obj_t *s_bark_lbl = nullptr;          // 实时“汪！”气泡
 lv_obj_t *s_score_lbl = nullptr;
+ui_pixel_battery_t s_battery{};
+int64_t s_battery_us = 0;
 lv_obj_t *s_hint_lbl = nullptr;
 lv_obj_t *s_vu_fill = nullptr;           // 音量条填充(轨道是它的兄弟,不需句柄)
 lv_obj_t *s_dead_panel = nullptr;
@@ -251,7 +255,8 @@ void build_dog(lv_obj_t *parent) {
     s_dog_tongue = px_block(s_dog, kTongueX, kTongueYBase + kMouthMinH, 5, 2, kTongue, 1);
 
     // 9. 狗叫冒泡气泡标签 (显示在头顶上方)
-    s_bark_lbl = px_label(parent, "", &buddy_font_16, 0xFFE066, LV_TEXT_ALIGN_LEFT);
+    s_bark_lbl = px_label(parent, "", &buddy_font_16,
+        ui_theme_get() == UI_THEME_PLAYFUL ? UI_WARNING : 0xFFE066, LV_TEXT_ALIGN_LEFT);
     lv_obj_set_pos(s_bark_lbl, GC_BIRD_X + GC_BIRD_W + 2, 134);
 }
 
@@ -278,7 +283,7 @@ void build_vu(lv_obj_t *parent) {
 
 void build_dead_panel(lv_obj_t *parent) {
     // 纸底 + 墨描边,宽 190, 高 122(几何与优化前完全一致,只加了滑入动画)
-    lv_obj_t *panel = px_block(parent, 25, kPanelHiddenY, 190, 122, kPaper, 0);
+    lv_obj_t *panel = px_block(parent, 12, kPanelHiddenY, 216, 140, kPaper, 0);
     s_dead_panel = panel;
     lv_obj_set_style_border_width(panel, 1, 0);
     lv_obj_set_style_border_side(panel, ui_theme_is_classic()
@@ -286,25 +291,25 @@ void build_dead_panel(lv_obj_t *parent) {
         : static_cast<lv_border_side_t>(LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM), 0);
     lv_obj_set_style_border_color(panel, lv_color_hex(UI_BORDER), 0);
 
-    lv_obj_t *title = px_label(panel, "你在狗叫什么！", &buddy_font_16, UI_DANGER,
+    lv_obj_t *title = px_label(panel, "再来一局？", &ui_font_20, UI_TEXT,
                                LV_TEXT_ALIGN_CENTER);
-    lv_obj_set_width(title, 184);
+    lv_obj_set_width(title, 210);
     lv_obj_set_pos(title, 3, 10);
 
-    s_dead_score = px_label(panel, "0", &lv_font_montserrat_20, UI_SKY_DARK,
+    s_dead_score = px_label(panel, "0", &lv_font_montserrat_32, UI_SKY_DARK,
                             LV_TEXT_ALIGN_CENTER);
-    lv_obj_set_width(s_dead_score, 184);
+    lv_obj_set_width(s_dead_score, 210);
     lv_obj_set_pos(s_dead_score, 3, 34);
 
     s_dead_best = px_label(panel, "最高纪录 0", &buddy_font_16, UI_SUB,
                            LV_TEXT_ALIGN_CENTER);
-    lv_obj_set_width(s_dead_best, 184);
-    lv_obj_set_pos(s_dead_best, 3, 62);
+    lv_obj_set_width(s_dead_best, 210);
+    lv_obj_set_pos(s_dead_best, 3, 82);
 
-    s_dead_rating = px_label(panel, "假狗·叫得太温柔", &buddy_font_16, UI_TEXT,
+    s_dead_rating = px_label(panel, "轻声挑战，下次再试", &buddy_font_16, UI_TEXT,
                              LV_TEXT_ALIGN_CENTER);
-    lv_obj_set_width(s_dead_rating, 184);
-    lv_obj_set_pos(s_dead_rating, 3, 90);
+    lv_obj_set_width(s_dead_rating, 210);
+    lv_obj_set_pos(s_dead_rating, 3, 112);
 }
 
 // ---------------------------------------------------------------------------
@@ -464,7 +469,7 @@ void on_dead() {
     lv_label_set_text(s_dead_best, line);
 
     // 抽象段位评级(沿用原四档,补一档 20 分彩蛋,强化成就感)
-    const char *rating = "假狗·叫得太温柔";
+    const char *rating = "轻声挑战，下次再试";
     if (score >= 20) rating = "全小区的狗都跟着你叫";
     else if (score >= 10) rating = "纯种哮天犬现世";
     else if (score >= 5) rating = "保安已被你惊动";
@@ -582,8 +587,13 @@ void dead_tick() {
 
 void tick(lv_timer_t *) {
     if (!s_active.load()) return;
+    const bool visible = app_registry_screen_is_on();
+    const bool playing = gc_phase() == GC_PLAYING;
+    if (s_timer) lv_timer_set_period(s_timer, visible || playing ? kFrameMs : 1000);
+    if (!visible && !playing) { s_last_tick_us = 0; return; }
 
     const int64_t now = esp_timer_get_time();
+    if (now - s_battery_us >= 5000000) { ui_pixel_battery_set(&s_battery, bsp_battery_soc()); s_battery_us = now; }
     if (s_last_tick_us) {
         const int64_t dt_ms = (now - s_last_tick_us) / 1000;
         if (dt_ms > 45) ++s_slow_frames;
@@ -634,10 +644,13 @@ void build_ui() {
     lv_obj_t *bar = ui_pixel_top_bar(s_screen);
     lv_obj_t *title = px_label(bar, "你在狗叫什么", &buddy_font_16, UI_TEXT,
                                LV_TEXT_ALIGN_LEFT);
-    lv_obj_align(title, LV_ALIGN_LEFT_MID, 8, 0);
-    s_score_lbl = px_label(bar, "0", &lv_font_montserrat_20, UI_YELLOW,
+    ui_pixel_status_text_align(title, 12, 96, LV_TEXT_ALIGN_LEFT);
+    s_score_lbl = px_label(bar, "0", &lv_font_montserrat_14, UI_YELLOW,
                            LV_TEXT_ALIGN_RIGHT);
-    lv_obj_align(s_score_lbl, LV_ALIGN_RIGHT_MID, -10, 0);
+    ui_pixel_status_text_align(s_score_lbl, 110, UI_STATUS_CONTENT_RIGHT - 110,
+                               LV_TEXT_ALIGN_RIGHT);
+    s_battery = ui_pixel_battery_create(bar, 206, 6, UI_TEXT, &lv_font_montserrat_14);
+    ui_pixel_battery_set(&s_battery, bsp_battery_soc()); s_battery_us = esp_timer_get_time();
 
     build_pipes(s_screen);
     build_vu(s_screen);
@@ -647,7 +660,7 @@ void build_ui() {
     // 原来是纯白字直接压在草地上,白/草绿对比只有约 2.2:1,看不清;
     // 换成纸底 + UI_SUB 后约 6:1,同时和整机其它 App 的提示胶囊一致。
     s_hint_lbl = px_label(s_screen, "", &buddy_font_16, UI_SUB, LV_TEXT_ALIGN_CENTER);
-    lv_obj_set_width(s_hint_lbl, 176);
+    lv_obj_set_width(s_hint_lbl, 216);
     lv_obj_set_style_bg_color(s_hint_lbl, lv_color_hex(kPaper), 0);
     lv_obj_set_style_bg_opa(s_hint_lbl, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(s_hint_lbl, 4, 0);
@@ -688,8 +701,14 @@ static void game_start(void) {
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 }
 
+static bool game_prepare_stop(void) {
+    s_active.store(false);
+    const bool sound_done = !kSfxEnabled || game_sfx_prepare_stop();
+    const bool mic_done = game_mic_prepare_stop();
+    return sound_done && mic_done;
+}
+
 static void game_stop(void) {
-    if (!s_active.load()) return;
     s_active.store(false);
     // 音效任务先收(它可能在阻塞写 I2S),再收采音,最后拆屏 —— 顺序不能反。
     if (kSfxEnabled) game_sfx_stop();
@@ -712,6 +731,7 @@ static void game_stop(void) {
     for (int i = 0; i < GC_PIPES; ++i)
         for (int k = 0; k < 4; ++k) s_pipe_obj[i][k] = nullptr;
     game_mic_stop();
+    bsp_audio_deinit();
     ESP_LOGI(kTag, "stopped; free=%u largest=%u",
              (unsigned)esp_get_free_heap_size(),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
@@ -728,6 +748,7 @@ static void game_on_key(uint8_t btn, app_btn_event_t event, uint16_t mv) {
        (LVGL 的 lv_timer 回调同样持这把锁,所以 tick 与本函数天然互斥,
        下面这些非原子状态不需要额外加锁。) */
     if (!bsp_lvgl_lock(-1)) return;
+    if (s_timer) lv_timer_set_period(s_timer, kFrameMs);
 
     switch (gc_phase()) {
     case GC_READY:
@@ -755,12 +776,13 @@ const passport_app_t g_game_app = {
     .id = APP_ID_GAME,
     .name = "你在狗叫什么",
     .en_name = "WHY BARKING",
-    .desc = "学狗叫控制升降 · 叫得越大嘴越开 · 魔性声控",
+    .desc = "出声上升，安静下降\n用声音越过障碍",
     .tag = "DOG",
     .theme_color = 0xEEA438,
     .init = game_init,
     .start = game_start,
     .stop = game_stop,
     .on_key = game_on_key,
+    .prepare_stop = game_prepare_stop,
 };
 }

@@ -11,8 +11,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
 
 static const char *TAG = "boot_chime";
+static atomic_bool s_busy;
 
 #define CHIME_HZ     16000          // 与语音/游戏应用的默认格式一致
 #define CHIME_AMP    7000           // ~21% 满幅:主音量 80% 下足够清晰不刺耳
@@ -53,14 +55,17 @@ static void chime_task(void *arg) {
     int16_t *note = malloc(NOTE_BUF_N * sizeof(int16_t));
     if (note == NULL) {
         ESP_LOGW(TAG, "note buf alloc failed, skip chime");
+        atomic_store(&s_busy, false);
         vTaskDelete(NULL);
         return;
     }
 
-    if (bsp_audio_init() != ESP_OK ||
+    if (bsp_audio_init_playback() != ESP_OK ||
         bsp_audio_set_format(CHIME_HZ, 16, 1) != ESP_OK) {
         ESP_LOGW(TAG, "audio unavailable, skip chime");
+        bsp_audio_deinit();
         free(note);
+        atomic_store(&s_busy, false);
         vTaskDelete(NULL);
         return;
     }
@@ -79,11 +84,16 @@ static void chime_task(void *arg) {
     bsp_audio_deinit();
     free(note);
     ESP_LOGI(TAG, "boot chime done");
+    atomic_store(&s_busy, false);
     vTaskDelete(NULL);
 }
 
 void boot_chime_start(void) {
+    if (atomic_exchange(&s_busy, true)) return;
     if (xTaskCreate(chime_task, "boot_chime", 4096, NULL, 3, NULL) != pdPASS) {
+        atomic_store(&s_busy, false);
         ESP_LOGW(TAG, "chime task create failed");
     }
 }
+
+bool boot_chime_busy(void) { return atomic_load(&s_busy); }

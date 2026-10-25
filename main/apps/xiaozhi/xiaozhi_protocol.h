@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <string>
 #include <functional>
+#include <atomic>
 #include "esp_websocket_client.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -79,11 +80,16 @@ public:
     // esp_websocket_client 内部会按 reconnect_timeout_ms 自行重连，
     // 因此上层在这段时间里不应该反复重建客户端。
     bool HasClient() const { return client_ != nullptr; }
-    State GetState() const { return state_; }
+    // A clean close/finished worker cannot auto-reconnect even with a live handle.
+    bool NeedsRestart() const { return needs_restart_.load(); }
+    State GetState() const { return state_.load(); }
     const std::string &session_id() const { return session_id_; }
 
     void SetEventQueue(EventQueue q) { event_q_ = q; }
     void SetState(State new_state);
+    // Connection/state transitions must not compete with display text for the
+    // bounded queue. Connection events use a sticky mailbox; state is polled.
+    bool PopCriticalEvent(Event *out);
 
     // 交互操作（控制任务调用）
     bool TriggerStartListen();
@@ -94,7 +100,7 @@ public:
     bool SendAudio(const uint8_t *opus_data, size_t len);
 
     // 握手是否在超时前完成
-    bool HandshakeDone() const { return hello_ok_; }
+    bool HandshakeDone() const { return hello_ok_.load(); }
 
     // 服务端 hello 里 audio_params.sample_rate 的值（官方实测 24000）。
     // 播放/解码必须按它来，否则 TTS 音调和语速都会错。
@@ -108,14 +114,17 @@ private:
 
     void OnConnected();
     void OnDisconnected();
+    void OnSessionEnded();
     void HandleData(const esp_websocket_event_data_t *data);
     void DispatchText();                                  // rx_text_ 已收全
     void Publish(EvType type, const char *text, State st = State::Disconnected);
     bool SendJson(const std::string &json);
+    void LoadIdentity();
     void ResetRx();
 
     esp_websocket_client_handle_t client_{nullptr};
-    State state_{State::Disconnected};
+    std::atomic<State> state_{State::Disconnected};
+    std::atomic<uint32_t> critical_events_{0};
     EventQueue event_q_{nullptr};
 
     std::string mac_address_;
@@ -123,7 +132,8 @@ private:
     std::string session_id_;
     std::string url_;
     int version_{3};
-    bool hello_ok_{false};
+    std::atomic<bool> hello_ok_{false};
+    std::atomic<bool> needs_restart_{false};
     int server_sample_rate_{16000};
 
     // 文本报文重组缓冲（仅 websocket 任务访问）

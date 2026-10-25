@@ -19,6 +19,9 @@ public:
     void AddSsid(const std::string& ssid, const std::string& password);
     void RemoveSsid(int index);
     void SetDefaultSsid(int index);
+    // Move a network that just connected to the front, so a full list drops
+    // the least recently used entry rather than the user's phone hotspot.
+    void MarkUsed(const std::string& ssid);
     void Clear();
     const std::vector<SsidItem>& GetSsidList() const { return ssid_list_; }
 

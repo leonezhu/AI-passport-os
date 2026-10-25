@@ -5,10 +5,15 @@
 #include "esp_lvgl_port.h"
 #include "esp_log.h"
 #include "lvgl.h"
+#include "esp_timer.h"
 
 static const char *TAG = "bsp_lvgl";
 
 static lv_display_t *s_disp;
+
+static uint32_t monotonic_tick_ms(void) {
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
 
 lv_display_t *bsp_lvgl_init(void) {
     if (s_disp) return s_disp;
@@ -26,6 +31,14 @@ lv_display_t *bsp_lvgl_init(void) {
         ESP_LOGE(TAG, "lvgl_port_init 失败");
         return NULL;
     }
+
+    // The port's default 5ms tick wakes ESP32-C3 200 times/second even asleep.
+    // Read the monotonic clock on demand, but leave the handler enabled:
+    // a disabled lv_timer_handler returns a 1ms polling delay.
+    lvgl_port_lock(0);
+    if (lvgl_port_stop() == ESP_OK) lv_tick_set_cb(monotonic_tick_ms);
+    lv_timer_enable(true);
+    lvgl_port_unlock();
 
     const lvgl_port_display_cfg_t dc = {
         .panel_handle = bsp_display_panel(),

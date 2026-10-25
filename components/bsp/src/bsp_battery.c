@@ -6,6 +6,8 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "esp_timer.h"
 #include <stdbool.h>
 
 static const char *TAG = "bsp_batt";
@@ -41,6 +43,11 @@ _Static_assert(sizeof(s_battery_profile) == CW_PROFILE_SIZE,
                "CW2017 battery profile must contain exactly 80 bytes");
 
 static i2c_master_dev_handle_t s_dev;
+static SemaphoreHandle_t s_poll_lock;
+static int s_soc = -1, s_raw_soc = -1, s_mv = -1;
+static uint8_t s_config, s_alert;
+static int64_t s_zero_since_us;
+static bool s_recovery_attempted;
 
 static int cw_read(uint8_t reg, uint8_t *buf, size_t n) {
     if (!s_dev) return -1;
@@ -62,17 +69,23 @@ static void cw_remove_device(void) {
 
 // CONFIG 的低 4 bit 为保留位。复位、睡眠和激活均按芯片规定时序切换。
 static int cw_enter_sleep(void) {
-    if (cw_write(CW_REG_CONFIG, CW_CONFIG_RESTART) != 0) return -1;
+    uint8_t config = 0;
+    if (cw_read(CW_REG_CONFIG, &config, 1) != 0) return -1;
+    const uint8_t reserved = config & 0x0F;
+    if (cw_write(CW_REG_CONFIG, reserved | CW_CONFIG_RESTART) != 0) return -1;
     vTaskDelay(pdMS_TO_TICKS(20));
-    if (cw_write(CW_REG_CONFIG, CW_CONFIG_SLEEP) != 0) return -1;
+    if (cw_write(CW_REG_CONFIG, reserved | CW_CONFIG_SLEEP) != 0) return -1;
     vTaskDelay(pdMS_TO_TICKS(10));
     return 0;
 }
 
 static int cw_enter_active(void) {
-    if (cw_write(CW_REG_CONFIG, CW_CONFIG_RESTART) != 0) return -1;
+    uint8_t config = 0;
+    if (cw_read(CW_REG_CONFIG, &config, 1) != 0) return -1;
+    const uint8_t reserved = config & 0x0F;
+    if (cw_write(CW_REG_CONFIG, reserved | CW_CONFIG_RESTART) != 0) return -1;
     vTaskDelay(pdMS_TO_TICKS(20));
-    if (cw_write(CW_REG_CONFIG, CW_CONFIG_ACTIVE) != 0) return -1;
+    if (cw_write(CW_REG_CONFIG, reserved | CW_CONFIG_ACTIVE) != 0) return -1;
     vTaskDelay(pdMS_TO_TICKS(10));
     return 0;
 }
@@ -138,6 +151,8 @@ static int cw_wait_soc_ready(void) {
 }
 
 esp_err_t bsp_battery_init(void) {
+    if (!s_poll_lock) s_poll_lock = xSemaphoreCreateMutex();
+    if (!s_poll_lock) return ESP_ERR_NO_MEM;
     if (s_dev) {
         uint8_t ver = 0;
         if (cw_read(CW_REG_VERSION, &ver, 1) == 0) return ESP_OK;
@@ -185,7 +200,7 @@ esp_err_t bsp_battery_init(void) {
             e = ESP_FAIL;
             goto fail;
         }
-        if (config != CW_CONFIG_ACTIVE && cw_enter_active() != 0) {
+        if ((config & 0xF0) != CW_CONFIG_ACTIVE && cw_enter_active() != 0) {
             e = ESP_FAIL;
             goto fail;
         }
@@ -193,11 +208,12 @@ esp_err_t bsp_battery_init(void) {
     }
 
     if (cw_wait_soc_ready() != 0) {
-        ESP_LOGE(TAG, "等待首次 SOC 计算超时");
-        e = ESP_ERR_TIMEOUT;
-        goto fail;
+        // Keep an answering device attached so periodic polls can recover. Do
+        // not turn a settling gauge into a permanently unavailable device.
+        ESP_LOGW(TAG, "SOC not ready yet; periodic polling will continue");
     }
-
+    bsp_battery_poll();
+    bsp_battery_log_status();
     return ESP_OK;
 
 fail:
@@ -205,17 +221,51 @@ fail:
     return e;
 }
 
-int bsp_battery_soc(void) {
-    uint8_t b[2] = { 0 };
-    if (cw_read(CW_REG_SOC_H, b, 2) != 0) return -1;
-    int soc = b[0];                       // 高字节即整数百分比
-    if (soc > 100) return -1;             // 芯片未就绪时可能读到 0xFF
-    return soc;
+void bsp_battery_poll(void) {
+    if (!s_poll_lock || xSemaphoreTake(s_poll_lock, pdMS_TO_TICKS(200)) != pdTRUE) return;
+    uint8_t soc[2] = {0}, voltage[2] = {0};
+    int next_soc = -1;
+    s_raw_soc = s_mv = -1;
+    if (cw_read(CW_REG_SOC_H, soc, 2) != 0 || cw_read(CW_REG_VCELL_H, voltage, 2) != 0 ||
+        cw_read(CW_REG_CONFIG, &s_config, 1) != 0 || cw_read(CW_REG_SOC_ALERT, &s_alert, 1) != 0) {
+        s_zero_since_us = 0;
+        goto done;
+    }
+    s_raw_soc = soc[0];
+    const uint32_t raw = (((uint32_t)voltage[0] << 8) | voltage[1]) & 0x3FFF;
+    s_mv = (int)((raw * 3125) / 10000);
+    const int64_t now = esp_timer_get_time();
+    if ((s_config & 0xF0) != CW_CONFIG_ACTIVE) {
+        ESP_LOGW(TAG, "Gauge asleep; restoring active mode");
+        cw_enter_active();
+        s_zero_since_us = 0;
+        goto done;
+    }
+    if (!(s_alert & CW_UPDATE_FLAG) || s_raw_soc > 100 || s_mv < 2500 || s_mv > 4500) {
+        s_zero_since_us = 0;
+        goto done;
+    }
+    if (s_raw_soc == 0 && s_mv > 3600) {
+        // This is a contradictory reading, not a calibrated voltage-to-SOC
+        // estimate. Show unavailable and retry the gauge once after 60 seconds.
+        if (!s_zero_since_us) s_zero_since_us = now;
+        if (!s_recovery_attempted && now - s_zero_since_us >= 60000000) {
+            s_recovery_attempted = true;
+            ESP_LOGW(TAG, "SOC stuck at zero with voltage=%dmV; one bounded gauge restart", s_mv);
+            cw_enter_active();
+        }
+        goto done;
+    }
+    s_zero_since_us = 0;
+    next_soc = s_raw_soc;
+done:
+    s_soc = next_soc;
+    xSemaphoreGive(s_poll_lock);
 }
 
-int bsp_battery_mv(void) {
-    uint8_t b[2] = { 0 };
-    if (cw_read(CW_REG_VCELL_H, b, 2) != 0) return -1;
-    uint32_t raw = ((uint32_t)b[0] << 8 | b[1]) & 0x3FFF;   // 14bit
-    return (int)((raw * 3125) / 10000);                     // raw * 312.5uV → mV
+int bsp_battery_soc(void) { return s_soc; }
+int bsp_battery_mv(void) { return s_mv; }
+void bsp_battery_log_status(void) {
+    ESP_LOGI(TAG, "Battery: raw_soc=%d display_soc=%d voltage_mv=%d config=0x%02X alert=0x%02X recovery=%d",
+        s_raw_soc, s_soc, s_mv, s_config, s_alert, s_recovery_attempted);
 }

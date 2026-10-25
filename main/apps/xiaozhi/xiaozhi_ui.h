@@ -23,5 +23,6 @@ void ui_set_ai_text(const std::string &text);          // 小智回复（替换�
 void ui_append_ai_text(const std::string &text);       // 小智回复（追加）
 void ui_set_hint(const std::string &text);             // 底部按键提示
 void ui_clear_text();
+void ui_set_volume(unsigned percent);
 
 } // namespace xiaozhi

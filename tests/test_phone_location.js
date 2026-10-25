@@ -1,0 +1,23 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const html=fs.readFileSync('web/phone-location.html','utf8');
+assert.ok(!/\bfetch\s*\(|XMLHttpRequest|sendBeacon|<script\b[^>]*\bsrc=/i.test(html),'helper never sends coordinates or loads third-party scripts');
+const script=html.match(/<script>\r?\n([\s\S]*?)<\/script>/)[1];
+const elements=new Map(),sent=[],timers=new Map();let sequence=0,callbacks=null;
+const get=id=>{if(!elements.has(id))elements.set(id,{value:'',textContent:'',dataset:{},hidden:false,focus(){},select(){}});return elements.get(id)};
+const window={isSecureContext:true,location:{hash:'#'+new URLSearchParams({origin:'http://192.168.4.1',request:'a'.repeat(32)})},opener:{closed:false,postMessage:(data,origin)=>sent.push({data,origin})}};
+const navigator={geolocation:{getCurrentPosition(ok,fail,options){callbacks={ok,fail};assert.equal(options.timeout,20000)}},clipboard:{writeText:async value=>assert.match(value,/^PPOS:/)}};
+const context=vm.createContext({document:{getElementById:get},window,navigator,URL,URLSearchParams,setTimeout(fn){const id=++sequence;timers.set(id,fn);return id},clearTimeout:id=>timers.delete(id)});
+vm.runInContext(script,context);
+(async()=>{
+ assert.equal(context.returnOrigin('https://192.168.4.1'),'');assert.equal(context.returnOrigin('http://evil.example'),'');assert.equal(context.returnOrigin('http://192.168.4.1/path'),'');
+ assert.equal(context.returnOrigin('http://192.168.4.1'),'http://192.168.4.1');assert.equal(context.returnOrigin('http://127.0.0.1:8877'),'http://127.0.0.1:8877');
+ assert.equal(sent.length,0);get('locate').onclick();callbacks.ok({coords:{latitude:22.271701,longitude:113.577702,accuracy:8.5}});
+ assert.equal(get('code').value,'PPOS:22.271701,113.577702,9');assert.equal(sent.length,0,'position is sent only after explicit user action');
+ get('send').onclick();assert.equal(sent[0].origin,'http://192.168.4.1');assert.equal(sent[0].data.lat,22.271701);assert.equal(sent[0].data.request,'a'.repeat(32));
+ await get('copy').onclick();assert.match(get('status').textContent,/已复制/);
+ get('locate').onclick();assert.equal(get('result').hidden,true);callbacks.fail({code:1});assert.match(get('status').textContent,/权限/);get('send').onclick();assert.equal(sent.length,1,'failed retry cannot send old coordinates');
+ get('locate').onclick();const stale=callbacks;[...timers.values()].at(-1)();stale.ok({coords:{latitude:22,longitude:113,accuracy:1}});assert.equal(get('result').hidden,true);assert.match(get('status').textContent,/超时/);
+ get('locate').onclick();callbacks.ok({coords:{latitude:22,longitude:113,accuracy:60000}});assert.match(get('status').textContent,/可靠/);assert.equal(get('result').hidden,true);
+ window.isSecureContext=false;get('locate').onclick();assert.match(get('status').textContent,/HTTPS/);
+ console.log('HTTPS phone location helper: consent, origin validation, explicit return, raw coordinates, retry/timeout/stale data and clipboard: PASS');
+})().catch(e=>{console.error(e);process.exitCode=1});

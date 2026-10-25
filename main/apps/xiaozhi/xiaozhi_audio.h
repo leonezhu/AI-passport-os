@@ -3,8 +3,8 @@
 // 小智音频服务：ES8311 半双工录音 / 播放。
 //
 // 线程模型（这是修复闪退的核心）：
-//   * websocket 任务只调用 PushIncomingAudio()：持锁几微秒写环形缓冲，绝不解码、
-//     绝不碰 codec、绝不阻塞。
+//   * websocket 任务只调用 PushIncomingAudio()：写环形缓冲，绝不解码或操作
+//     codec；队列满时最多等待 300ms，让 TCP 背压吸收突发。
 //   * 一条常驻工作线程 xzg_audio 承担"录音编码"和"播放解码"两种模式。两种模式
 //     天然互斥（半双工），所以共用一份大栈就够了 —— Opus 编解码器都用栈上临时
 //     缓冲，实测编码需 ~19KB、解码需 >6KB，在 ~90KB 堆上各开一条大栈根本放不下。
@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <functional>
+#include <atomic>
 #include "esp_err.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -39,19 +40,23 @@ constexpr size_t kEncPcmFrameBytes = 1920;
 constexpr int kEncFrameDurationMs = 60;
 
 constexpr size_t kOpusFrameMaxBytes = 512;
-// 解码：服务端实测下发 24kHz，60ms 单声道 16bit 需要 2880 字节
+// 解码：服务端下发 24kHz/60ms 单声道 PCM 为 2880 字节。
+// 对齐官方 folo-ai-passport-xiaozhi，硬件原生 24kHz 输出，无需升采样。
 constexpr size_t kMaxPcmFrameBytes = 2880;
 
 class AudioService {
 public:
     static AudioService &GetInstance();
+    // Non-blocking flag only; safe from input/launcher without constructing the
+    // singleton or touching codec/worker handles.
+    static void RequestStop();
 
     esp_err_t Init();
     // 应用退出时调用：停掉一切、销毁常驻工作线程、把缓冲还给堆。
     // 这样切到别的 App 时机器内存不会被小智占着（多 App 共存的前提）。
-    void Deinit();
+    bool Deinit();
 
-    // ---- websocket 任务调用：非阻塞，缓冲满则丢弃 ----
+    // ---- websocket 任务调用：有界背压，持续满则丢弃 ----
     void PushIncomingAudio(const uint8_t *opus_data, size_t len);
 
     // ---- 控制任务调用：录音生命周期 ----
@@ -62,8 +67,14 @@ public:
     // largest 只剩 15-22KB，而 esp_opus_enc_open 需要约 25KB 连续块，
     // 必然失败（ESP_OPUS_ENC: Opus encoder init failed. ret:-7）。
     // 因此在 Init() 就把编码器开好常驻，StopRecording() 不再关它。
-    // 只有在"播放需要内存、解码器开不出来"时才临时放掉，播完立刻补回。
+    // 播放解码器在 Init 中同步预留，普通轮次和重连都复用。
     bool EnsureEncoder();
+
+    // Server hello confirms sample rate, then allocates the small session rings.
+    // Decoder memory is reserved before TLS and retained across reconnects.
+    bool PrepareSessionResources();
+    // Release the rings after disconnection; Deinit releases codec states too.
+    bool ReleaseSessionResources();
 
     bool StartRecording();
     void StopRecording();
@@ -83,6 +94,7 @@ public:
     void AbortPlayback();   // 立刻丢弃缓冲并停止（打断 / 退出应用）
     bool IsPlaying() const { return is_playing_; }
     bool HasPendingPlayback() const;
+    uint32_t PlaybackProgress() const { return playback_progress_.load(); }
 
     void Reset();
 
@@ -101,6 +113,7 @@ private:
 
     bool WaitWorkIdle(uint32_t timeout_ms, const char *name);
     bool OpenDecoder();
+    std::atomic<uint32_t> playback_progress_{0};
 
     // 通用字节环形缓冲（存 [u16 len][payload] 记录）
     struct Ring {
@@ -108,6 +121,7 @@ private:
         size_t cap;
         size_t head;
         size_t tail;
+        size_t records;
         SemaphoreHandle_t lock;
         const char *name;
     };
@@ -115,44 +129,55 @@ private:
                          const char *name);
     static size_t RingUsed(const Ring &r);
     static size_t RingFree(const Ring &r);
+    static size_t RingCount(const Ring &r);
     static bool RingPush(Ring &r, const uint8_t *data, size_t len);
     static size_t RingPop(Ring &r, uint8_t *out, size_t out_cap);
     static void RingReset(Ring &r);
+    static void RingRelease(Ring &r, uint8_t *&owned_buffer);
 
     void *opus_enc_handle_{nullptr};
     void *opus_dec_handle_{nullptr};
     int opus_dec_rate_{0};                  // 当前解码器使用的采样率
-    bool enc_dropped_for_playback_{false};  // 播放时被迫放掉编码器，播完要补回
 
-    volatile bool is_recording_{false};
-    volatile bool is_playing_{false};
-    volatile bool play_stop_{false};    // 硬停：立刻退出
-    volatile bool play_drain_{false};   // 软停：播完缓冲再退出
+    std::atomic<bool> is_recording_{false};
+    std::atomic<bool> is_playing_{false};
+    std::atomic<bool> play_stop_{false};    // 硬停：立刻退出
+    std::atomic<bool> play_drain_{false};   // 软停：播完缓冲再退出
 
-    int playback_rate_{16000};
+    // Reserve the current service default before TLS; reconcile with hello
+    // before accepting any audio if a server negotiates a different rate.
+    int playback_rate_{24000};
 
-    uint8_t *playback_buf_{nullptr};    // Opus 入帧暂存
-    uint8_t *record_pcm_buf_{nullptr};
-    uint8_t *record_opus_buf_{nullptr};
-    uint8_t *pcm_out_{nullptr};         // 解码输出（只在播放期间分配）
+    // One worker performs encode/decode exclusively. Both modes share the
+    // 512-byte Opus scratch; WebSocket writes only to the separate ring.
+    uint8_t *opus_scratch_{nullptr};
+    // Shared 2880 B PCM holds either 1920 B recording or 2880 B playback.
+    uint8_t *pcm_scratch_{nullptr};
 
     TaskHandle_t worker_task_{nullptr};  // 常驻：录音/播放共用一条
-    volatile Work work_{Work::Idle};
-    volatile bool worker_quit_{false};
+    StackType_t *worker_stack_{nullptr}; // 借用与收音机互斥的固定工作区
+    StaticTask_t worker_tcb_{};
+    std::atomic<Work> work_{Work::Idle};
+    std::atomic<bool> worker_quit_{false};
     SemaphoreHandle_t work_signal_{nullptr};
     SemaphoreHandle_t work_idle_{nullptr};
+    SemaphoreHandle_t worker_stopped_{nullptr};
 
     SemaphoreHandle_t lifecycle_lock_{nullptr};
+    // Lifetime-long synchronization must not pin holes inside session heap.
+    StaticSemaphore_t sync_storage_[6]{};
+    bool bsp_owned_{false};
 
-    // 播放环形缓冲 2048 ≈ 8 个 Opus 帧 ≈ 0.5 秒余量。服务端是突发下发的，
-    // 缓冲太小会在 TTS 开头丢帧（实测 1024 时开播瞬间即满）；但这里是 BSS，
-    // 每多 1KB 就少 1KB 堆，在 ~90KB 的机器上不能贪。
-    static constexpr size_t kPlayRingCap = 2048;
-    uint8_t play_ring_buf_[kPlayRingCap];
+    // 播放环形缓冲 3072 ≈ 12~15 个 Opus 帧 ≈ 0.8 秒余量。配合短时 TCP 背压
+    // (PushIncomingAudio 中 300ms 有界等待)吸收常见突发；持续满仍会丢帧。
+    // 将容量从 8KB 收紧至 3KB，直接向系统堆归还 5120 字节内部 SRAM，确保
+    // 录音栈与 Opus 编码器能顺利拿到连续内存。
+    static constexpr size_t kPlayRingCap = 3072;
+    uint8_t *play_ring_buf_{nullptr};
     Ring play_ring_{};
 
     static constexpr size_t kTxRingCap = 512;
-    uint8_t tx_ring_buf_[kTxRingCap];
+    uint8_t *tx_ring_buf_{nullptr};
     Ring tx_ring_{};
 };
 

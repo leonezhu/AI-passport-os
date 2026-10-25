@@ -55,6 +55,11 @@ std::string LoadOrCreateClientId() {
 } // namespace
 
 Protocol::Protocol() {
+    LoadIdentity();
+    rx_text_[0] = '\0';
+}
+
+void Protocol::LoadIdentity() {
     uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     char mac_buf[18];
@@ -63,7 +68,6 @@ Protocol::Protocol() {
                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     mac_address_ = mac_buf;
     client_id_ = LoadOrCreateClientId();
-    rx_text_[0] = '\0';
     ESP_LOGI(TAG, "Device-Id(MAC)=%s Client-Id=%s", mac_address_.c_str(), client_id_.c_str());
 }
 
@@ -94,10 +98,14 @@ bool Protocol::Start(const std::string &url, const std::string &token, int versi
         Stop();
     }
 
+    if (mac_address_.empty() || client_id_.empty()) LoadIdentity();
+
     url_ = url;
     version_ = (version >= 1 && version <= 3) ? version : 3;
     session_id_.clear();
     hello_ok_ = false;
+    critical_events_ = 0;
+    needs_restart_ = false;
     ResetRx();
 
     SetState(State::Connecting);
@@ -107,10 +115,10 @@ bool Protocol::Start(const std::string &url, const std::string &token, int versi
     // 1024 就够：小智的 JSON 报文都很小，超长报文由本层的显式分片重组兜住
     // （payload_offset/payload_len）。每 1KB 缓冲都是从 ~90KB 堆里省出来的。
     ws_cfg.buffer_size = 1024;
-    ws_cfg.task_stack = 5120;          // 本层回调已不做解析/阻塞，仅入队
+    ws_cfg.task_stack = 5120;          // small JSON + bounded audio enqueue; no codec work
     ws_cfg.task_prio = 5;
     ws_cfg.ping_interval_sec = 15;
-    ws_cfg.reconnect_timeout_ms = 5000;
+    ws_cfg.disable_auto_reconnect = true; // controller owns the 6..60s backoff
     ws_cfg.network_timeout_ms = 8000;
     ws_cfg.crt_bundle_attach = esp_crt_bundle_attach;
 
@@ -152,15 +160,24 @@ bool Protocol::Start(const std::string &url, const std::string &token, int versi
 void Protocol::Stop() {
     // 注意：绝不能从 websocket 任务/回调里调用 —— 组件会直接拒绝
     // （"Client cannot be stopped from websocket task"）并返回失败。
+    // Suppress terminal callbacks from our own stop; callbacks never destroy
+    // the client. Join its worker before clearing the old session's mailbox.
+    needs_restart_ = true;
     if (client_) {
         esp_websocket_client_stop(client_);      // 内部等待接收任务退出
         esp_websocket_client_destroy(client_);
         client_ = nullptr;
     }
     hello_ok_ = false;
-    session_id_.clear();
+    std::string{}.swap(session_id_);
+    std::string{}.swap(url_);
+    // Identity remains persisted in NVS. These first-session string buffers
+    // otherwise survive the app and pin holes needed by the next audio codec.
+    std::string{}.swap(mac_address_);
+    std::string{}.swap(client_id_);
     ResetRx();
     SetState(State::Disconnected);
+    critical_events_ = 0;
 }
 
 bool Protocol::IsConnected() const {
@@ -168,6 +185,12 @@ bool Protocol::IsConnected() const {
 }
 
 void Protocol::Publish(EvType type, const char *text, State st) {
+    if (type == EvType::StateChanged) return;  // controller polls latest state
+    if (type == EvType::Connected || type == EvType::Disconnected ||
+        type == EvType::SocketError || type == EvType::HelloOk) {
+        critical_events_.fetch_or(1u << static_cast<unsigned>(type));
+        return;
+    }
     if (event_q_ == nullptr) return;
     Event ev = {};
     ev.type = type;
@@ -182,10 +205,26 @@ void Protocol::Publish(EvType type, const char *text, State st) {
     }
 }
 
+bool Protocol::PopCriticalEvent(Event *out) {
+    if (out == nullptr) return false;
+    // Teardown old resources before accepting a new hello if both arrive while
+    // the controller is busy. A stale hello is checked against HandshakeDone.
+    const EvType order[] = {EvType::Disconnected, EvType::SocketError,
+                            EvType::Connected, EvType::HelloOk};
+    for (EvType type : order) {
+        const uint32_t bit = 1u << static_cast<unsigned>(type);
+        if (critical_events_.fetch_and(~bit) & bit) {
+            *out = {};
+            out->type = type;
+            return true;
+        }
+    }
+    return false;
+}
+
 void Protocol::SetState(State new_state) {
     if (state_ == new_state) return;
-    State old = state_;
-    state_ = new_state;
+    State old = state_.exchange(new_state);
     ESP_LOGI(TAG, "State: %s -> %s", StateName(old), StateName(new_state));
     Publish(EvType::StateChanged, nullptr, new_state);
 }
@@ -202,10 +241,10 @@ bool Protocol::SendJson(const std::string &json) {
 }
 
 bool Protocol::TriggerStartListen() {
-    if (!IsConnected()) return false;
+    if (!IsConnected() || !HandshakeDone() || session_id_.empty()) return false;
     // 官方格式：session_id 必须回传，否则服务端无法把这一轮挂到会话上。
     std::string msg = "{\"session_id\":\"" + session_id_ +
-                      "\",\"type\":\"listen\",\"state\":\"start\",\"mode\":\"manual\"}";
+                      "\",\"type\":\"listen\",\"state\":\"start\",\"mode\":\"auto\"}";
     if (!SendJson(msg)) return false;
     ESP_LOGI(TAG, "listen/start sent");
     SetState(State::Listening);
@@ -281,6 +320,10 @@ void Protocol::WebsocketEventHandler(void *handler_args, esp_event_base_t base,
     case WEBSOCKET_EVENT_DISCONNECTED:
         self->OnDisconnected();
         break;
+    case WEBSOCKET_EVENT_CLOSED:
+    case WEBSOCKET_EVENT_FINISH:
+        self->OnSessionEnded();
+        break;
     case WEBSOCKET_EVENT_DATA:
         self->HandleData(data);
         break;
@@ -297,6 +340,7 @@ void Protocol::WebsocketEventHandler(void *handler_args, esp_event_base_t base,
 }
 
 void Protocol::OnConnected() {
+    if (NeedsRestart()) return;
     ESP_LOGI(TAG, "WebSocket connected");
     hello_ok_ = false;
     ResetRx();
@@ -305,7 +349,7 @@ void Protocol::OnConnected() {
     // 官方 hello 报文：version / features{mcp} / transport / audio_params
     // 本机没有实现 MCP 工具（IoT 能力），因此如实声明 mcp:false —— 声明 true 会让
     // 服务端把工具调用请求推给我们，而我们无法回应，白白干扰对话。
-    // frame_duration 如实上报本机编码帧长（20ms，见 xiaozhi_audio.h 的说明）。
+    // frame_duration 如实上报本机编码帧长（60ms，见 xiaozhi_audio.h 的说明）。
     char hello[256];
     std::snprintf(hello, sizeof(hello),
                   "{\"type\":\"hello\",\"version\":%d,\"features\":{\"mcp\":false},"
@@ -325,7 +369,18 @@ void Protocol::OnDisconnected() {
     Publish(EvType::Disconnected, nullptr);
 }
 
+void Protocol::OnSessionEnded() {
+    hello_ok_ = false;
+    SetState(State::Disconnected);
+    // goodbye, CLOSE and FINISH can all describe the same shutdown. Keep one
+    // sticky notification even when the display-text queue is full.
+    if (!needs_restart_.exchange(true)) {
+        Publish(EvType::Disconnected, nullptr);
+    }
+}
+
 void Protocol::HandleData(const esp_websocket_event_data_t *d) {
+    if (NeedsRestart()) return; // ignore late hello/TTS from a retired session
     if (d == nullptr || d->data_ptr == nullptr || d->data_len <= 0) return;
 
     const size_t off = (size_t)d->payload_offset;
@@ -362,7 +417,11 @@ void Protocol::HandleData(const esp_websocket_event_data_t *d) {
                              (unsigned)hdr->type, (unsigned)declared, (unsigned)plen);
                 }
             }
-            AudioService::GetInstance().PushIncomingAudio(payload, plen);
+            // Old TTS packets after abort/stop must not restart playback. The
+            // authoritative state is updated here before the controller polls.
+            if (HandshakeDone() && GetState() == State::Speaking) {
+                AudioService::GetInstance().PushIncomingAudio(payload, plen);
+            }
             bin_len_ = 0;
         }
         return;
@@ -456,6 +515,9 @@ void Protocol::DispatchText() {
         if (cJSON_IsString(txt) && txt->valuestring) {
             Publish(EvType::UserText, txt->valuestring);
         }
+        // auto 模式由服务端 VAD 决定本轮说话结束。收到识别结果就进入思考态，
+        // 上层据此彻底停止录音，再允许后续 TTS 播放，保持严格半双工。
+        SetState(State::Thinking);
     } else if (std::strcmp(t, "llm") == 0) {
         const cJSON *emo = cJSON_GetObjectItem(root, "emotion");
         if (cJSON_IsString(emo) && emo->valuestring) {
@@ -479,7 +541,7 @@ void Protocol::DispatchText() {
         Publish(EvType::Alert, buf);
     } else if (std::strcmp(t, "goodbye") == 0) {
         ESP_LOGW(TAG, "Server said goodbye");
-        Publish(EvType::Alert, "会话已被服务端结束");
+        OnSessionEnded();
     } else {
         ESP_LOGI(TAG, "Unhandled message type '%s'", t);
     }

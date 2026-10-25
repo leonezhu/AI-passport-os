@@ -89,6 +89,7 @@ void SsidManager::AddSsid(const std::string& ssid, const std::string& password) 
         if (item.ssid == ssid) {
             ESP_LOGW(TAG, "SSID %s already exists, overwrite it", ssid.c_str());
             item.password = password;
+            MarkUsed(ssid);
             SaveToNvs();
             return;
         }
@@ -110,6 +111,14 @@ void SsidManager::RemoveSsid(int index) {
     }
     ssid_list_.erase(ssid_list_.begin() + index);
     SaveToNvs();
+}
+
+void SsidManager::MarkUsed(const std::string& ssid) {
+    for (size_t i = 1; i < ssid_list_.size(); ++i) {
+        if (ssid_list_[i].ssid != ssid) continue;
+        SetDefaultSsid(static_cast<int>(i));
+        return;
+    }
 }
 
 void SsidManager::SetDefaultSsid(int index) {

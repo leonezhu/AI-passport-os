@@ -1,381 +1,118 @@
 #include "launcher/wifi_setup.h"
 #include "launcher/app_registry.h"
-#include "apps/radio/radio_ui.h"
+#include "apps/home/home_upload.h"
+#include "apps/home/home_profile.h"
 #include "wifi_manager.h"
-#include "wifi_station.h"
 #include "ssid_manager.h"
 #include "bsp_display.h"
-#include "bsp_button.h"
+#include "bsp_battery.h"
+#include "ui_pixel.h"
+#include "app_fonts.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_wifi.h"
-
-#include <algorithm>
-#include <array>
 #include <atomic>
-#include <cstring>
-#include <cstdio>
-#include <mutex>
-#include <string>
-
-static const char *TAG = "wifi_setup";
 
 namespace {
-
-enum class SetupState {
-    List,
-    Keyboard,
-    Connecting,
-};
-
-constexpr std::size_t kMaxVisibleNetworks = 16;
-
-std::atomic<SetupState> s_state{SetupState::List};
+std::atomic<bool> s_required{false};
 std::atomic<bool> s_active{false};
-std::recursive_mutex s_mutex;
+std::atomic<bool> s_completing{false};
+lv_obj_t *s_screen = nullptr;
+lv_obj_t *s_status = nullptr;
+ui_pixel_battery_t s_battery{};
+uint32_t s_battery_tick;
 
-std::array<WifiNetworkView, kMaxVisibleNetworks> s_networks = {};
-std::size_t s_network_count = 0;
-std::size_t s_network_selected = 0;
-
-std::string s_selected_ssid;
-std::string s_password;
-WifiKeyboardPage s_kb_page = WifiKeyboardPage::Lower;
-std::size_t s_key_selected = 0;
-
-// 任务句柄改为原子:原来由 worker 写 NULL、由 start/stop 读,是典型的多任务
-// 裸共享(见审查 A2/D3)。用 atomic 消除"读到半截指针"的可能。
-std::atomic<TaskHandle_t> s_scan_task{nullptr};
-std::atomic<TaskHandle_t> s_connect_task{nullptr};
-
-// UI 存活开关:stop() 里先置 false,worker 再晚一步醒来时也不会去碰已经
-// 隐藏的 radio_ui(否则会出现"退出后还往已销毁界面写文本")。
-std::atomic<bool> s_ui_alive{false};
-
-void update_list_display(bool scanning) {
-    if (!s_ui_alive.load()) return;
-    std::lock_guard<std::recursive_mutex> lock(s_mutex);
-    radio_ui_show_wifi_list(s_networks.data(), s_network_count,
-                            s_network_selected, scanning,
-                            "Passport-WiFi", true);
+lv_obj_t *line(const char *text, int y, uint32_t color, const lv_font_t *font = &buddy_font_16) {
+    auto *label = ui_pixel_label(s_screen, text, font, color);
+    lv_obj_set_pos(label, 12, y);
+    lv_obj_set_width(label, 216);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    return label;
+}
 }
 
-void update_keyboard_display(const char *status = nullptr) {
-    if (!s_ui_alive.load()) return;
-    std::lock_guard<std::recursive_mutex> lock(s_mutex);
-    radio_ui_show_wifi_keyboard(s_selected_ssid.c_str(), s_password.size(),
-                                s_kb_page, s_key_selected, status);
-}
-
-void scan_worker(void *arg) {
-    (void)arg;
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // creator has published the handle
-    ESP_LOGI(TAG, "Starting Wi-Fi scan worker...");
-    // 触发一次即时 Wi-Fi 扫描
-    esp_wifi_scan_start(nullptr, false);
-
-    for (int attempt = 0; attempt < 15 && s_active.load(); ++attempt) {
-        auto aps = WifiManager::GetInstance().GetConfigAccessPoints();
-        if (!aps.empty()) {
-            std::sort(aps.begin(), aps.end(), [](const wifi_ap_record_t &a, const wifi_ap_record_t &b) {
-                return a.rssi > b.rssi;
-            });
-
-            std::array<WifiNetworkView, kMaxVisibleNetworks> views = {};
-            std::size_t count = 0;
-            for (const auto &ap : aps) {
-                const char *ssid = reinterpret_cast<const char *>(ap.ssid);
-                if (!ssid[0]) continue;
-                bool dup = false;
-                for (std::size_t i = 0; i < count; ++i) {
-                    if (std::strncmp(views[i].ssid, ssid, sizeof(views[i].ssid)) == 0) {
-                        dup = true;
-                        break;
-                    }
-                }
-                if (dup || count >= views.size()) continue;
-
-                std::snprintf(views[count].ssid, sizeof(views[count].ssid), "%.*s", 32, ssid);
-                views[count].rssi = ap.rssi;
-                views[count].secure = ap.authmode != WIFI_AUTH_OPEN;
-                ++count;
-            }
-
-            if (count > 0) {
-                {
-                    std::lock_guard<std::recursive_mutex> lock(s_mutex);
-                    s_networks = views;
-                    s_network_count = count;
-                    if (s_network_selected >= count) s_network_selected = 0;
-                }
-                update_list_display(false);
-                break;
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(600));
-    }
-
-    if (s_active.load()) {
-        update_list_display(false);
-    }
-    s_scan_task = nullptr;
-    vTaskDelete(NULL);
-}
-
-void start_scan() {
-    if (s_scan_task.load() != nullptr) return;
-    update_list_display(true);
-    // xTaskCreate 要的是 TaskHandle_t*,原子变量不能直接取址 —— 先落本地再存,
-    // 避免"任务已跑起来但句柄还没写回"的窗口。
-    TaskHandle_t h = nullptr;
-    if (xTaskCreate(scan_worker, "wf_scan", 3584, NULL, 4, &h) != pdPASS) {
-        ESP_LOGW(TAG, "scan task create failed");
-        update_list_display(false);
-        return;
-    }
-    s_scan_task.store(h);
-    xTaskNotifyGive(h);
-}
-
-void connect_worker(void *arg) {
-    (void)arg;
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // creator has published the handle
-    std::string ssid;
-    std::string pass;
-    {
-        std::lock_guard<std::recursive_mutex> lock(s_mutex);
-        ssid = s_selected_ssid;
-        pass = s_password;
-    }
-
-    ESP_LOGI(TAG, "Connecting to SSID: %s...", ssid.c_str());
-    bool ok = WifiManager::GetInstance().ConfigureNetwork(ssid, pass);
-    if (!s_active.load()) {
-        s_connect_task = nullptr;
-        vTaskDelete(NULL);
-        return;
-    }
-
-    if (ok) {
-        ESP_LOGI(TAG, "Wi-Fi connected successfully!");
-        if (s_ui_alive.load()) radio_ui_show_wifi_connecting(ssid.c_str(), "连接成功！");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        WifiManager::GetInstance().StopConfigAp();
-        s_connect_task = nullptr;
-        if (s_active.load() && app_registry_get_active() == APP_ID_WIFI)
-            app_registry_switch_to(APP_ID_LAUNCHER);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    ESP_LOGW(TAG, "Wi-Fi connection failed.");
-    {
-        std::lock_guard<std::recursive_mutex> lock(s_mutex);
-        s_state = SetupState::Keyboard;
-    }
-    update_keyboard_display("连接失败，请重试");
-    s_connect_task = nullptr;
-    vTaskDelete(NULL);
-}
-
-void start_connect() {
-    if (s_connect_task.load() != nullptr) return;
-    std::string ssid;
-    {
-        std::lock_guard<std::recursive_mutex> lock(s_mutex);
-        if (s_selected_ssid.empty()) return;
-        s_state = SetupState::Connecting;
-        ssid = s_selected_ssid;
-    }
-    if (s_ui_alive.load()) radio_ui_show_wifi_connecting(ssid.c_str(), "正在连接网络...");
-    TaskHandle_t h = nullptr;
-    if (xTaskCreate(connect_worker, "wf_conn", 4096, NULL, 5, &h) != pdPASS) {
-        ESP_LOGW(TAG, "connect task create failed");
-        s_state = SetupState::Keyboard;
-        update_keyboard_display("内存不足，请重试");
-        return;
-    }
-    s_connect_task.store(h);
-    xTaskNotifyGive(h);
-}
-
-} // namespace
-
-void wifi_setup_init(void) {
-    ESP_LOGI(TAG, "Initializing Wi-Fi setup UI subsystems...");
-    radio_ui_init();
-}
+void wifi_setup_require_initial(void) { s_required = true; }
+bool wifi_setup_can_leave(void) { return !home_upload_busy(); }
+void wifi_setup_init(void) {}
 
 void wifi_setup_start(void) {
-    ESP_LOGI(TAG, "Starting Wi-Fi setup app...");
-    s_active.store(true);
-    s_ui_alive.store(true);
-    s_state = SetupState::List;
-
-    // 1. 初始化并启动 Web AP 门户 "Passport-WiFi" (192.168.4.1)
-    WifiManagerConfig cfg = {};
-    cfg.ssid_prefix = "Passport-WiFi";
-    cfg.language = "zh-CN";
-    if (!WifiManager::GetInstance().Initialize(cfg)) {
-        ESP_LOGE(TAG, "WifiManager initialize failed (out of memory?)");
-        update_list_display(false);
-        return;
-    }
-    WifiManager::GetInstance().StartConfigAp();
-
-    // 2. 启动热点扫描与列表展示
-    start_scan();
+    s_active = true;
+    home_profile_init();
+    if (SsidManager::GetInstance().GetSsidList().empty()) s_required = true;
+    auto &wifi = WifiManager::GetInstance();
+    wifi.StartConfigAp(true); // DNS/AP only; one shared HTTP server owns the full flow.
+    const auto err = home_upload_start();
+    bsp_lvgl_lock(-1);
+    s_screen = lv_obj_create(nullptr);
+    lv_obj_remove_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
+    ui_pixel_background(s_screen);
+    auto *top=ui_pixel_top_bar(s_screen);
+    auto *name=ui_pixel_label(top,"手机设置",&buddy_font_16,UI_TEXT);lv_obj_align(name,LV_ALIGN_LEFT_MID,12,0);
+    s_battery=ui_pixel_battery_create(top,206,6,UI_TEXT,&lv_font_montserrat_14);
+    ui_pixel_battery_set(&s_battery,bsp_battery_soc());s_battery_tick=lv_tick_get();
+    auto *welcome = line(s_required?"欢迎使用 AI Passport OS":"用手机完成设置",44,UI_TEXT,&ui_font_20);
+    // The complete product name needs slightly more than the usual 216px row.
+    lv_obj_set_pos(welcome, 8, 44);
+    lv_obj_set_width(welcome, 224);
+    line("1 连接设备热点",84,UI_TEXT_DIM);
+    line(wifi.GetApSsid().c_str(),112,UI_ACCENT,&lv_font_montserrat_14);
+    line("2 手机浏览器打开",158,UI_TEXT_DIM);
+    line("192.168.4.1",190,UI_ACCENT,&lv_font_montserrat_32);
+    s_status=line(err==ESP_OK?"提示无互联网时选保留":"服务未启动，确定重试",242,UI_TEXT_DIM);
+    lv_obj_set_height(s_status,22);lv_label_set_long_mode(s_status,LV_LABEL_LONG_DOT);
+    ui_pixel_footer(s_screen,"配网、资料、名片一起设置",s_required?"长按确定跳过配网":"长按确定返回首页",&buddy_font_16);
+    lv_screen_load(s_screen);
+    bsp_lvgl_unlock();
+    app_registry_keep_awake();
 }
 
 void wifi_setup_stop(void) {
-    ESP_LOGI(TAG, "Stopping Wi-Fi setup app...");
-    s_active.store(false);
-
-    // 2026-09-13 修复(A1):这里原来是"等 750ms 后 vTaskDelete 强杀"。
-    // scan_worker 最长要跑 15×600ms=9s,几乎必然在持着 LVGL 递归锁时被杀,
-    // 锁永不释放 → 此后所有任务的 UI 调用永久阻塞 → 整机冻死只能断电。
-    // 现在的做法是:先关 UI 开关、置 s_active,然后**有上界地等任务自己退出**
-    // (两个 worker 的循环都会检查 s_active),超时只记日志,绝不 vTaskDelete。
-    s_ui_alive.store(false);
-    TaskHandle_t cur = xTaskGetCurrentTaskHandle();
-    int wait_cycles = 0;
-    while ((s_scan_task.load() != nullptr ||
-            (s_connect_task.load() != nullptr && s_connect_task.load() != cur)) &&
-           wait_cycles < 100) {          // 100 × 50ms = 5s 上界
-        vTaskDelay(pdMS_TO_TICKS(50));
-        wait_cycles++;
-    }
-    if (s_scan_task.load() != nullptr ||
-        (s_connect_task.load() != nullptr && s_connect_task.load() != cur)) {
-        // 仍存活:不删它(可能正持有 LVGL 锁),只告警。它一旦走到 s_active
-        // 检查点就会自行退出;s_ui_alive 已为 false,不会再碰已隐藏的界面。
-        ESP_LOGW(TAG, "worker still running after 5s; left to exit by itself (no vTaskDelete)");
-    }
-
+    s_active = false;
+    home_upload_stop();
     WifiManager::GetInstance().StopConfigAp();
-    if (!SsidManager::GetInstance().GetSsidList().empty() && !WifiManager::GetInstance().IsConnected()) {
-        ESP_LOGI(TAG, "Resuming station mode after exiting Wi-Fi setup...");
-        WifiManager::GetInstance().StartStation();
-    }
-    radio_ui_hide();
-    ESP_LOGI(TAG, "Wi-Fi setup stopped cleanly.");
+    if (!SsidManager::GetInstance().GetSsidList().empty()) WifiManager::GetInstance().StartStation();
+    bsp_lvgl_lock(-1);
+    if (s_screen) lv_obj_delete(s_screen);
+    s_screen = s_status = nullptr;
+    bsp_lvgl_unlock();
 }
 
-void wifi_setup_on_key(uint8_t btn, app_btn_event_t event, uint16_t mv) {
-    (void)mv;
+void wifi_setup_on_key(uint8_t btn, app_btn_event_t event, uint16_t) {
+    if (btn == BSP_BTN_OK && event == BTN_EVT_CLICK && !home_upload_active()) {
+        const auto err = home_upload_start();
+        bsp_lvgl_lock(-1);
+        ui_pixel_label_set_text(s_status, err == ESP_OK ? "请在手机浏览器刷新页面" : "启动失败，请重启设备");
+        bsp_lvgl_unlock();
+    }
+}
 
-    if (s_state == SetupState::Connecting) return;
-
-    if (s_state == SetupState::List) {
-        if (event == BTN_EVT_CLICK) {
-            if (btn == BSP_BTN_UP) {
-                // "+" 往前选择下一个热点
-                std::lock_guard<std::recursive_mutex> lock(s_mutex);
-                if (s_network_count > 0) {
-                    s_network_selected = (s_network_selected + 1) % s_network_count;
-                }
-                update_list_display(false);
-            } else if (btn == BSP_BTN_DOWN) {
-                // "-" 往后选择上一个热点
-                std::lock_guard<std::recursive_mutex> lock(s_mutex);
-                if (s_network_count > 0) {
-                    s_network_selected = (s_network_selected + s_network_count - 1) % s_network_count;
-                }
-                update_list_display(false);
-            } else if (btn == BSP_BTN_OK) {
-                std::lock_guard<std::recursive_mutex> lock(s_mutex);
-                if (s_network_count > 0) {
-                    s_selected_ssid = s_networks[s_network_selected].ssid;
-                    s_password.clear();
-                    s_kb_page = WifiKeyboardPage::Lower;
-                    s_key_selected = 0;
-                    s_state = SetupState::Keyboard;
-                    ESP_LOGI(TAG, "Selected SSID '%s' (row %u), opening keyboard...",
-                             s_selected_ssid.c_str(), (unsigned)s_network_selected);
-                    update_keyboard_display(nullptr);
-                }
-            }
-        } else if (event == BTN_EVT_LONG && btn == BSP_BTN_OK) {
-            start_scan();
+void wifi_setup_tick(void) {
+    if (!s_active.load()) return;
+    app_registry_keep_awake();
+    if (home_upload_finished()) {
+        // Home's JPEG decoder needs >4 KB stack; never switch from sys_mon's 2560 B stack.
+        if (!s_completing.exchange(true)) {
+            if (xTaskCreate([](void *) {
+                s_required = false;
+                if (s_active.load()) app_registry_switch_to(APP_ID_HOME);
+                s_completing = false;
+                vTaskDelete(nullptr);
+            }, "setup_done", 8192, nullptr, 4, nullptr) != pdPASS) s_completing = false;
         }
         return;
     }
-
-    if (s_state == SetupState::Keyboard) {
-        // 2026-09-13 修复(A5):整个键盘分支都在改 s_password / s_state / s_kb_page,
-        // 而 connect_worker 会持同一把锁读 s_selected_ssid / s_password。
-        // std::string 的并发读写会直接破坏堆(表现为随机重启),所以这里必须加锁。
-        // s_mutex 是 recursive_mutex,与 update_keyboard_display/start_connect
-        // 内部的加锁嵌套是安全的。
-        std::lock_guard<std::recursive_mutex> lock(s_mutex);
-        const std::size_t count = radio_ui_wifi_key_count(s_kb_page);
-        if (count == 0) return;
-
-        if (event == BTN_EVT_CLICK) {
-            if (btn == BSP_BTN_UP) {
-                // "+" 往前跳一格
-                s_key_selected = (s_key_selected + 1) % count;
-                update_keyboard_display(nullptr);
-            } else if (btn == BSP_BTN_DOWN) {
-                // "-" 往后跳一格
-                s_key_selected = (s_key_selected + count - 1) % count;
-                update_keyboard_display(nullptr);
-            } else if (btn == BSP_BTN_OK) {
-                const char *key = radio_ui_wifi_key(s_kb_page, s_key_selected);
-                if (std::strcmp(key, "ABC") == 0) {
-                    s_kb_page = WifiKeyboardPage::Upper;
-                    s_key_selected = 0;
-                    update_keyboard_display(nullptr);
-                } else if (std::strcmp(key, "abc") == 0) {
-                    s_kb_page = WifiKeyboardPage::Lower;
-                    s_key_selected = 0;
-                    update_keyboard_display(nullptr);
-                } else if (std::strcmp(key, "123") == 0) {
-                    s_kb_page = WifiKeyboardPage::Symbols;
-                    s_key_selected = 0;
-                    update_keyboard_display(nullptr);
-                } else if (std::strcmp(key, "<") == 0) {
-                    if (!s_password.empty()) {
-                        s_password.pop_back();
-                        update_keyboard_display(nullptr);
-                    } else {
-                        // 密码已空时再次按退格，返回热点列表
-                        s_state = SetupState::List;
-                        update_list_display(false);
-                    }
-                } else if (std::strcmp(key, "GO") == 0) {
-                    start_connect();
-                } else if (s_password.size() < 63) {
-                    s_password += key;
-                    update_keyboard_display(nullptr);
-                }
-            }
-        } else if (event == BTN_EVT_LONG) {
-            if (btn == BSP_BTN_UP) {
-                // "+" 长按：跨行向前跳跃 6 个按键
-                s_key_selected = (s_key_selected + std::min<std::size_t>(6, count)) % count;
-                update_keyboard_display(nullptr);
-            } else if (btn == BSP_BTN_DOWN) {
-                // "-" 长按：跨行向后跳跃 6 个按键
-                s_key_selected = (s_key_selected + count - std::min<std::size_t>(6, count)) % count;
-                update_keyboard_display(nullptr);
-            } else if (btn == BSP_BTN_OK) {
-                // 长按 OK 由全局拦截返回桌面 Launcher
-            }
-        }
+    if (bsp_lvgl_lock(50)) {
+        if(s_screen&&lv_tick_get()-s_battery_tick>=5000){ui_pixel_battery_set(&s_battery,bsp_battery_soc());s_battery_tick=lv_tick_get();}
+        if (s_status) ui_pixel_label_set_text(s_status, home_upload_busy() ? "正在连接，请保持热点" :
+                    home_upload_network_verified() ? "联网成功，手机继续设置" :
+                    home_upload_active() ? "提示无互联网时选保留" : "服务未启动，确定重试");
+        bsp_lvgl_unlock();
     }
 }
 
 const passport_app_t g_wifi_app = {
-    .id = APP_ID_WIFI,
-    .name = "无线网络",
-    .en_name = "WLAN SETUP",
-    .desc = "扫描附近热点 · 小键盘输入密码 · 支持手机配网",
-    .tag = "Wi-Fi / AP",
-    .theme_color = 0x4ED39A,
-    .init = wifi_setup_init,
-    .start = wifi_setup_start,
-    .stop = wifi_setup_stop,
-    .on_key = wifi_setup_on_key,
+    .id = APP_ID_WIFI, .name = "手机设置", .en_name = "PHONE SETUP",
+    .desc = "配网、资料与名片", .tag = "SYSTEM", .theme_color = 0x181B1C,
+    .init = wifi_setup_init, .start = wifi_setup_start,
+    .stop = wifi_setup_stop, .on_key = wifi_setup_on_key,
 };

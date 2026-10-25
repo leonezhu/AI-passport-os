@@ -6,6 +6,7 @@
 #include <mutex>
 #include <memory>
 #include <functional>
+#include <atomic>
 
 #include <esp_http_server.h>
 #include <esp_event.h>
@@ -38,12 +39,13 @@ public:
     void SetLanguage(const std::string &language);
     void SetShowOtaConfig(bool show) { show_ota_config_ = show; }
     void SetShowSleepConfig(bool show) { show_sleep_config_ = show; }
-    void Start();
+    void Start(bool external_portal = false, bool device_only = false);
+    int LastDisconnectReason() const { return last_disconnect_reason_.load(); }
     void Stop();
 #if !CONFIG_IDF_TARGET_ESP32P4
     void StartSmartConfig();
 #endif
-    bool ConnectToWifi(const std::string &ssid, const std::string &password);
+    bool ConnectToWifi(const std::string &ssid, const std::string &password, bool keep_connected = false);
     void Save(const std::string &ssid, const std::string &password);
     std::vector<wifi_ap_record_t> GetAccessPoints();
     std::string GetSsid();
@@ -67,6 +69,7 @@ private:
     esp_event_handler_instance_t instance_got_ip_;
     esp_timer_handle_t scan_timer_ = nullptr;
     bool is_connecting_ = false;
+    std::atomic<int> last_disconnect_reason_{0};
     esp_netif_t* ap_netif_ = nullptr;
     std::vector<wifi_ap_record_t> ap_records_;
 
@@ -82,6 +85,7 @@ private:
     std::function<void()> on_exit_requested_;
 
     void StartAccessPoint();
+    void StartScan();
     void StartWebServer();
 
     // Event handlers

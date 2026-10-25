@@ -11,6 +11,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +31,7 @@ void game_sfx_start(void);
 
 // 删播放任务(幂等)。退出游戏时调用,回收栈。
 void game_sfx_stop(void);
+bool game_sfx_prepare_stop(void);
 
 // 异步请求播放一个音;未启动/队列忙时静默丢弃(音效永远不能拖慢主循环)。
 void game_sfx_play(game_sfx_t id);

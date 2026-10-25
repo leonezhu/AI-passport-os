@@ -23,6 +23,7 @@ void game_mic_start(void);
 
 // 请求退出并等待任务结束(每次 read 最长 16ms,通常 <50ms 返回)。
 void game_mic_stop(void);
+bool game_mic_prepare_stop(void);
 
 // 平滑响度(均值整流×EMA)。静音房间约数百,正常说话数千。
 // 未就绪(热机期)恒为 0。

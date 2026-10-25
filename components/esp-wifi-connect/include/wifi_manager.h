@@ -26,6 +26,8 @@
 #include <memory>
 #include <functional>
 #include <mutex>
+#include <atomic>
+#include "internet_status.h"
 
 #include "wifi_station.h"
 
@@ -51,7 +53,7 @@ struct WifiManagerConfig {
     
     // Station mode scan interval with exponential backoff
     int station_scan_min_interval_seconds = 10;   // Initial scan interval (fast retry)
-    int station_scan_max_interval_seconds = 300;  // Maximum scan interval (5 minutes)
+    int station_scan_max_interval_seconds = 60;   // Maximum scan interval (1 minute)
     std::string station_hostname;                  // Optional DHCP hostname for station mode
 
     // How many times to retry the strongest same-SSID AP before falling back to
@@ -85,6 +87,10 @@ public:
     void StopStation();    // Non-blocking
     
     bool IsConnected() const;
+    bool HasInternet() const { return GetInternetStatus() == InternetStatus::Online; }
+    InternetStatus GetInternetStatus() const { return IsConnected() ? internet_status_.load() : InternetStatus::Offline; }
+    void SetPreferredSsid(std::function<std::string()> provider);
+    int LastConfigDisconnectReason() const;
     std::string GetSsid() const;
     std::string GetIpAddress() const;
     int GetRssi() const;
@@ -93,7 +99,7 @@ public:
 
     // ==================== Config AP Mode ====================
     
-    void StartConfigAp();  // Non-blocking, auto-stops station if active
+    void StartConfigAp(bool external_portal = false, bool device_only = false);
     void StopConfigAp();   // Non-blocking
     
     bool IsConfigMode() const;
@@ -103,11 +109,14 @@ public:
     // Device-side configuration UI support. The captive portal remains active
     // while these methods expose its scan results and verified connection flow.
     std::vector<wifi_ap_record_t> GetConfigAccessPoints();
-    bool ConfigureNetwork(const std::string& ssid, const std::string& password);
+    bool ConfigureNetwork(const std::string& ssid, const std::string& password, bool keep_ap = false);
 
     // ==================== Power ====================
     
     void SetPowerSaveLevel(WifiPowerSaveLevel level);
+
+    // Key press / app open while offline: rescan without waiting for backoff.
+    void ScanNow();
 
     // ==================== Event ====================
     
@@ -123,6 +132,15 @@ private:
     ~WifiManager();
 
     void NotifyEvent(WifiEvent event, const std::string& data = "");
+    void CheckInternet();
+    void InvalidateInternet();
+    static void InternetWorker(void *arg);
+    static uint32_t NetworkHash(const std::string &ssid);
+    void AllowNetwork(const std::string &ssid);
+    std::atomic<InternetStatus> internet_status_{InternetStatus::Offline};
+    std::atomic<unsigned> network_generation_{0};
+    std::atomic<bool> internet_worker_{false};
+    std::atomic<uint32_t> excluded_[10]{};
 
     WifiManagerConfig config_;
     std::unique_ptr<WifiStation> station_;

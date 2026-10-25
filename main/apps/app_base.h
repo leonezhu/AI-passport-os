@@ -19,6 +19,10 @@ typedef enum {
     APP_ID_HOME,
     APP_ID_GAME,
     APP_ID_TETRIS,
+    APP_ID_STOPWATCH,
+    APP_ID_SOUND_JUMP,
+    APP_ID_MUSE,
+    APP_ID_POMODORO,
     APP_ID_COUNT
 } passport_app_id_t;
 
@@ -43,6 +47,13 @@ typedef struct {
     void (*start)(void);        // 进入前台运行
     void (*stop)(void);         // 退出前台（清理任务、注销网络、释放堆内存）
     void (*on_key)(uint8_t btn, app_btn_event_t event, uint16_t mv); // 按键事件分发
+    // Request cooperative shutdown before releasing the UI or starting another
+    // app. Return false while a worker still owns network/audio resources.
+#ifdef __cplusplus
+    bool (*prepare_stop)(void) = nullptr;
+#else
+    bool (*prepare_stop)(void);
+#endif
 } passport_app_t;
 
 #ifdef __cplusplus

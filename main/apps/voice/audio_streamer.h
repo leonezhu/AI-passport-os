@@ -1,7 +1,7 @@
 // main/audio_streamer.h —— 流式音频管线。
-// 静态环形缓冲(NOSPLIT 两槽)+ 双 worker:audio 采集(阻塞 bsp_audio_read) → ring → BLE notify 发送。
-// 任何路径无 >4KB 连续堆分配;拥塞时源端丢帧并上报 AUDIO_DROP_* 事件,丢帧数供 voice.end 后
-// status 帧对账(design.md 掉帧对账)。
+// 会话拥有的环形缓冲(NOSPLIT 两槽)+ 双 worker:audio 采集 → ring → 通道发送。
+// init 一次申请缓冲和 worker 栈,每轮录音不再分配;deinit 等任务停稳后释放。
+// 拥塞时源端丢帧并上报 AUDIO_DROP_* 事件,丢帧数供 voice.end 后 status 帧对账。
 #pragma once
 
 #include "esp_err.h"
@@ -28,6 +28,7 @@ void audio_streamer_set_sender(audio_send_fn_t fn);
 void audio_streamer_set_compressed(bool on);
 
 esp_err_t audio_streamer_init(void);   // 建环形缓冲与两个 worker(空闲等待)
+bool audio_streamer_deinit(void);      // 等两个 worker 停止后归还整段会话内存
 // 开始采集与发送(清零会话丢帧计数)。会话以递增 token 标识,环内 item 头携带
 // 快照 token;旧会话残留(环内/在途/迟到块)由 ble_worker 按 token 失效静默
 // 丢弃——start 永不因残留拒绝,无需排空即可立即重开。
@@ -42,6 +43,7 @@ void audio_streamer_cancel(void);
 // 等待环内残留数据发送完(最多 ms)。voice.end 前调用保证帧序。
 void audio_streamer_drain(uint32_t ms);
 bool audio_streamer_active(void);
+void audio_streamer_release_audio(void);
 uint16_t audio_streamer_peak(void);    // 最近一块的峰值采样(UI 音量条用)
 // 读走本会话(自上次 start)累计丢帧数并清零。main.c 在 SEND_VOICE_END 的 drain 之后
 // 取走(采集已停 + 环已排空,计数稳定),随 voice.end 后的 status 帧上报 Mac(掉帧对账)。

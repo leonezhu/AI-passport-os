@@ -23,6 +23,10 @@ enum class RadioPlaybackState {
 };
 
 bool radio_player_init();
+// Stops the streaming task and releases decoder, codec, I2S/DMA and sync
+// resources. Returns false when the worker did not exit within the bounded
+// wait; in that case resources are deliberately kept to avoid use-after-free.
+bool radio_player_deinit(uint32_t timeout_ms = 5000);
 void radio_player_set_network(bool connected);
 void radio_player_toggle();
 void radio_player_set_playing(bool playing);
@@ -38,5 +42,6 @@ bool radio_player_replace_stations(const RadioStation *stations, std::size_t cou
 // when the new catalog still offers it, so a restart resumes where it left off.
 bool radio_player_replace_stations_resuming(const RadioStation *stations,
                                            std::size_t count);
+// Same persisted system volume used by Settings and Xiaozhi, including 0=mute.
 void radio_player_set_volume(uint8_t volume);
 uint8_t radio_player_volume();

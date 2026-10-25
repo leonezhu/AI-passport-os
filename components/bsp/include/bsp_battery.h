@@ -13,8 +13,11 @@ extern "C" {
 // 芯片不应答时返回 ESP_ERR_NOT_FOUND —— 上层可据此在 UI 上标记该项不可用。
 esp_err_t bsp_battery_init(void);
 
-// 剩余电量百分比 0..100;读失败返回 -1。
+// Cached gauge readings, refreshed every 10s by the system monitor. Invalid or
+// contradictory readings return -1; voltage is never converted into a fake SOC.
 int bsp_battery_soc(void);
+void bsp_battery_poll(void);
+void bsp_battery_log_status(void);
 
 // 电池电压 mV;读失败返回 -1。
 int bsp_battery_mv(void);

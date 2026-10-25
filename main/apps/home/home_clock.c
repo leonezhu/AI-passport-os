@@ -13,12 +13,17 @@ static const char *TAG = "home_clock";
 
 #define CLOCK_EPOCH_MIN 1700000000LL /* 2023-11;早于此视为未校时 */
 
+static void on_time_sync(struct timeval *tv) {
+    if (tv && tv->tv_sec >= CLOCK_EPOCH_MIN) time_sync_set_epoch(tv->tv_sec);
+}
+
 void home_clock_start(void) {
     if (esp_sntp_enabled()) return;
     // 单服务器(LWIP_SNTP_MAX_SERVERS=1),阿里云节点国内可达性最好;
     // 解析失败由 SNTP 自身按间隔重试,无需外层重试任务。
     esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
     esp_sntp_setservername(0, "ntp.aliyun.com");
+    esp_sntp_set_time_sync_notification_cb(on_time_sync);
     esp_sntp_init();
     ESP_LOGI(TAG, "SNTP started (ntp.aliyun.com)");
 }
@@ -41,7 +46,7 @@ void home_clock_format_time(char *buf, size_t cap) {
         snprintf(buf, cap, "--:--");
         return;
     }
-    time_t t = time(NULL) + (time_t)time_sync_tz_hour() * 3600;
+    time_t t = time(NULL) + (time_t)time_sync_tz_offset_sec();
     struct tm tm;
     gmtime_r(&t, &tm);
     snprintf(buf, cap, "%02d:%02d", tm.tm_hour, tm.tm_min);
@@ -53,7 +58,7 @@ void home_clock_format_date(char *buf, size_t cap) {
         snprintf(buf, cap, "----");
         return;
     }
-    time_t t = time(NULL) + (time_t)time_sync_tz_hour() * 3600;
+    time_t t = time(NULL) + (time_t)time_sync_tz_offset_sec();
     struct tm tm;
     gmtime_r(&t, &tm);
     snprintf(buf, cap, "%02d月%02d日", tm.tm_mon + 1, tm.tm_mday);
@@ -66,7 +71,7 @@ void home_clock_format_weekday(char *buf, size_t cap) {
         snprintf(buf, cap, "----");
         return;
     }
-    time_t t = time(NULL) + (time_t)time_sync_tz_hour() * 3600;
+    time_t t = time(NULL) + (time_t)time_sync_tz_offset_sec();
     struct tm tm;
     gmtime_r(&t, &tm);
     snprintf(buf, cap, "%s", kWeek[tm.tm_wday % 7]);

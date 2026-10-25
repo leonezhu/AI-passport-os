@@ -1,8 +1,8 @@
 build/
+build-public/
 sdkconfig
 sdkconfig.old
 managed_components/
-dependencies.lock
 .vscode/
 .idea/
 __pycache__/
@@ -13,3 +13,15 @@ __pycache__/
 *.map
 dist/
 .cache/
+build-diag/
+build-*/
+output/
+release/
+sdkconfig.diag
+all_chars.txt
+ui_chars.txt
+.impeccable/
+
+# Generated firmware and local validation artifacts
+*.uf2
+*.hex

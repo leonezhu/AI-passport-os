@@ -1,6 +1,8 @@
 #include "wifi_configuration_ap.h"
 #include <cstdio>
+#include <cstring>
 #include <memory>
+#include <algorithm>
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
 #include <esp_err.h>
@@ -17,6 +19,7 @@
 #include <esp_smartconfig.h>
 #endif
 #include "ssid_manager.h"
+#include "phone_time.h"
 #include "sdkconfig.h"
 
 #define TAG "WifiConfigurationAp"
@@ -73,7 +76,7 @@ void WifiConfigurationAp::SetSsidPrefix(const std::string &ssid_prefix)
     ssid_prefix_ = ssid_prefix;
 }
 
-void WifiConfigurationAp::Start()
+void WifiConfigurationAp::Start(bool external_portal, bool device_only)
 {
     // Register event handlers
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
@@ -87,15 +90,21 @@ void WifiConfigurationAp::Start()
                                                         this,
                                                         &instance_got_ip_));
 
-    StartAccessPoint();
-    StartWebServer();
+    if (device_only) {
+        if (!esp_netif_get_handle_from_ifkey("WIFI_STA_DEF")) esp_netif_create_default_wifi_sta();
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+        ESP_ERROR_CHECK(esp_wifi_start());
+    } else {
+        StartAccessPoint();
+        if (!external_portal) StartWebServer();
+    }
     
     // Setup periodic WiFi scan timer before triggering scan to prevent null timer race condition
     esp_timer_create_args_t timer_args = {
         .callback = [](void* arg) {
             auto* self = static_cast<WifiConfigurationAp*>(arg);
             if (!self->is_connecting_) {
-                esp_wifi_scan_start(nullptr, false);
+                self->StartScan();
             }
         },
         .arg = this,
@@ -108,7 +117,21 @@ void WifiConfigurationAp::Start()
     }
 
     // Start scan immediately
-    esp_wifi_scan_start(nullptr, false);
+    StartScan();
+}
+
+void WifiConfigurationAp::StartScan() {
+    wifi_scan_config_t config = {};
+    config.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+    config.scan_time.active.min = 20;
+    config.scan_time.active.max = 80;
+    config.home_chan_dwell_time = 40;
+    // Keep the captive AP responsive between channels; never block HTTP handlers.
+    const esp_err_t err = esp_wifi_scan_start(&config, false);
+    if (err != ESP_OK && scan_timer_) {
+        ESP_LOGW(TAG, "Background scan deferred: %s", esp_err_to_name(err));
+        esp_timer_start_once(scan_timer_, 5000000);
+    }
 }
 
 std::string WifiConfigurationAp::GetSsid()
@@ -184,7 +207,7 @@ void WifiConfigurationAp::StartAccessPoint()
     ESP_ERROR_CHECK(esp_wifi_set_band_mode(WIFI_BAND_MODE_2G_ONLY));
 #endif
 
-    ESP_LOGI(TAG, "Access Point started with SSID %s", ssid.c_str());
+    ESP_LOGI(TAG, "Access Point started with SSID %s (open)", ssid.c_str());
 
     // 加载高级配置
     nvs_handle_t nvs;
@@ -415,6 +438,7 @@ void WifiConfigurationAp::StartWebServer()
             }
 
             // 获取当前对象
+            wifi_phone_time_apply(json);
             auto *this_ = static_cast<WifiConfigurationAp *>(req->user_ctx);
             if (!this_->ConnectToWifi(ssid_str, password_str)) {
                 cJSON_Delete(json);
@@ -682,7 +706,7 @@ void WifiConfigurationAp::StartWebServer()
     ESP_LOGI(TAG, "Web server started");
 }
 
-bool WifiConfigurationAp::ConnectToWifi(const std::string &ssid, const std::string &password)
+bool WifiConfigurationAp::ConnectToWifi(const std::string &ssid, const std::string &password, bool keep_connected)
 {
     if (ssid.empty()) {
         ESP_LOGE(TAG, "SSID cannot be empty");
@@ -700,6 +724,9 @@ bool WifiConfigurationAp::ConnectToWifi(const std::string &ssid, const std::stri
     }
     
     is_connecting_ = true;
+    last_disconnect_reason_ = 0;
+    esp_wifi_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(100));
 
     // Upper-level retry loop with delay between attempts.
     //
@@ -745,8 +772,8 @@ bool WifiConfigurationAp::ConnectToWifi(const std::string &ssid, const std::stri
 
         wifi_config_t wifi_config;
         bzero(&wifi_config, sizeof(wifi_config));
-        strlcpy((char *)wifi_config.sta.ssid, ssid.c_str(), 32);
-        strlcpy((char *)wifi_config.sta.password, password.c_str(), 64);
+        memcpy(wifi_config.sta.ssid, ssid.data(), ssid.size());
+        memcpy(wifi_config.sta.password, password.data(), password.size());
         wifi_config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
         wifi_config.sta.failure_retry_cnt = 1;
 
@@ -800,7 +827,7 @@ bool WifiConfigurationAp::ConnectToWifi(const std::string &ssid, const std::stri
 
     if (connected) {
         ESP_LOGI(TAG, "Connected to WiFi %s", ssid.c_str());
-        esp_wifi_disconnect();
+        if (!keep_connected) esp_wifi_disconnect();
         return true;
     } else {
         ESP_LOGE(TAG,
@@ -831,8 +858,9 @@ void WifiConfigurationAp::WifiEventHandler(void* arg, esp_event_base_t event_bas
         wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
         ESP_LOGI(TAG, "Station " MACSTR " left, AID=%d", MAC2STR(event->mac), event->aid);
     } else if (event_id == WIFI_EVENT_STA_CONNECTED) {
-        xEventGroupSetBits(self->event_group_, WIFI_CONNECTED_BIT);
+        // Association alone is insufficient: wait for DHCP in IpEventHandler.
     } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        self->last_disconnect_reason_ = static_cast<wifi_event_sta_disconnected_t *>(event_data)->reason;
         xEventGroupSetBits(self->event_group_, WIFI_FAIL_BIT);
     } else if (event_id == WIFI_EVENT_SCAN_DONE) {
         std::lock_guard<std::mutex> lock(self->mutex_);
@@ -840,15 +868,17 @@ void WifiConfigurationAp::WifiEventHandler(void* arg, esp_event_base_t event_bas
         esp_wifi_scan_get_ap_num(&ap_num);
 
         if (ap_num > 0) {
+            ap_num = std::min<uint16_t>(ap_num, 20);
             self->ap_records_.resize(ap_num);
             esp_wifi_scan_get_ap_records(&ap_num, self->ap_records_.data());
+            self->ap_records_.resize(ap_num);
         } else {
             self->ap_records_.clear();
         }
 
-        // 扫描完成，等待10秒后再次扫描
+        // Avoid interrupting phone uploads with frequent off-channel scans.
         if (self->scan_timer_ != nullptr) {
-            esp_timer_start_once(self->scan_timer_, 10 * 1000000);
+            esp_timer_start_once(self->scan_timer_, 30 * 1000000);
         }
     }
 }
@@ -973,4 +1003,5 @@ void WifiConfigurationAp::Stop() {
     }
 
     ESP_LOGI(TAG, "Wifi configuration AP stopped");
+    std::vector<wifi_ap_record_t>().swap(ap_records_);
 }

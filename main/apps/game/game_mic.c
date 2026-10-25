@@ -26,6 +26,7 @@ static const char *TAG = "game_mic";
 static atomic_uint s_level;
 static atomic_bool s_ready;
 static atomic_bool s_active;
+static atomic_bool s_running;
 static TaskHandle_t s_task;
 
 /* 等旧任务退出:最多 wait_ticks × 15ms。返回它是否已经消失。 */
@@ -45,6 +46,7 @@ static void mic_task(void *arg) {
         ESP_LOGE(TAG, "bsp_audio_init 失败: %s", esp_err_to_name(err));
         atomic_store(&s_active, false);
         s_task = NULL;
+        atomic_store(&s_running, false);
         vTaskDelete(NULL);
         return;
     }
@@ -94,10 +96,10 @@ static void mic_task(void *arg) {
         ema = (ema == 0) ? mean : (ema * ((1u << MIC_EMA_SHIFT) - 1u) + mean) >> MIC_EMA_SHIFT;
         atomic_store(&s_level, (unsigned)(ema > 4095u ? 4095u : ema));
     }
-    /* 不 deinit codec:bsp_audio 无关断 API,语音应用停止后同样保持打开,
-       RX 空转功耗可忽略;App 互斥保证没有别人在用。 */
+    /* Game owner closes the codec only after both RX and SFX TX have exited. */
     ESP_LOGI(TAG, "mic task exit");
     s_task = NULL;
+    atomic_store(&s_running, false);
     vTaskDelete(NULL);
 }
 
@@ -116,10 +118,12 @@ void game_mic_start(void) {
     atomic_store(&s_level, 0);
     atomic_store(&s_ready, false);
     atomic_store(&s_active, true);
+    atomic_store(&s_running, true);
     if (xTaskCreate(mic_task, "game_mic", 3072, NULL, 3, &s_task) != pdPASS) {
         ESP_LOGE(TAG, "mic task create failed");
         atomic_store(&s_active, false);
         s_task = NULL;
+        atomic_store(&s_running, false);
     }
 }
 
@@ -129,6 +133,11 @@ void game_mic_stop(void) {
     if (!wait_task_exit(40)) { /* 最多等 600ms */
         ESP_LOGW(TAG, "mic task slow to exit, leaving it to self-delete");
     }
+}
+
+bool game_mic_prepare_stop(void) {
+    atomic_store(&s_active, false);
+    return !atomic_load(&s_running);
 }
 
 uint16_t game_mic_level(void) { return (uint16_t)atomic_load(&s_level); }

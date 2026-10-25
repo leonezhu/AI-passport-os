@@ -94,6 +94,10 @@ bool WifiManager::Initialize(const WifiManagerConfig& config) {
     }
 
     station_ = std::make_unique<WifiStation>();
+    station_->SetNetworkAllowed([this](const std::string &ssid) {
+        for (const auto &hash : excluded_) if (hash == NetworkHash(ssid)) return false;
+        return true;
+    });
     config_ap_ = std::make_unique<WifiConfigurationAp>();
 
     initialized_ = true;
@@ -147,9 +151,11 @@ void WifiManager::StartStation() {
         NotifyEvent(WifiEvent::Connecting, ssid);
     });
     station_->OnConnected([this](const std::string& ssid) {
+        CheckInternet();
         NotifyEvent(WifiEvent::Connected, ssid);
     });
     station_->OnDisconnected([this](int reason) {
+        InvalidateInternet();
         NotifyEvent(WifiEvent::Disconnected, std::to_string(reason));
     });
 
@@ -167,6 +173,7 @@ void WifiManager::StopStation() {
     }
 
     ESP_LOGI(TAG, "Stopping station");
+    InvalidateInternet();
     station_->Stop();
     ESP_LOGI(TAG, "Station stopped");
     station_active_ = false;
@@ -223,7 +230,7 @@ std::string WifiManager::GetMacAddress() const {
 
 // ==================== Config AP Mode ====================
 
-void WifiManager::StartConfigAp() {
+void WifiManager::StartConfigAp(bool external_portal, bool device_only) {
     std::unique_lock<std::mutex> lock(mutex_);
 
     if (!initialized_) {
@@ -237,6 +244,7 @@ void WifiManager::StartConfigAp() {
 
     // Auto-stop station if active
     if (station_active_) {
+        InvalidateInternet();
         ESP_LOGI(TAG, "Stopping station before starting config AP");
         station_->Stop();
         station_active_ = false;
@@ -259,7 +267,7 @@ void WifiManager::StartConfigAp() {
         StopConfigAp();
     });
 
-    config_ap_->Start();
+    config_ap_->Start(external_portal, device_only);
     config_mode_active_ = true;
 
     lock.unlock();
@@ -311,7 +319,7 @@ std::vector<wifi_ap_record_t> WifiManager::GetConfigAccessPoints() {
 }
 
 bool WifiManager::ConfigureNetwork(const std::string& ssid,
-                                   const std::string& password) {
+                                   const std::string& password, bool keep_ap) {
     WifiConfigurationAp* config_ap = nullptr;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -319,9 +327,10 @@ bool WifiManager::ConfigureNetwork(const std::string& ssid,
         config_ap = config_ap_.get();
     }
 
-    if (!config_ap->ConnectToWifi(ssid, password)) return false;
+    if (!config_ap->ConnectToWifi(ssid, password, keep_ap)) return false;
     config_ap->Save(ssid, password);
-    StopConfigAp();
+    AllowNetwork(ssid); // an explicit successful selection overrides this boot's skip list
+    if (!keep_ap) StopConfigAp();
     return true;
 }
 
@@ -336,6 +345,11 @@ void WifiManager::SetPowerSaveLevel(WifiPowerSaveLevel level) {
         return;
     }
     station_->SetPowerSaveLevel(level);
+}
+
+void WifiManager::ScanNow() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (station_active_ && station_) station_->ScanNow();
 }
 
 // ==================== Event ====================

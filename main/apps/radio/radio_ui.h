@@ -11,11 +11,7 @@ struct WifiNetworkView {
     bool secure;
 };
 
-enum class WifiKeyboardPage {
-    Lower,
-    Upper,
-    Symbols,
-};
+#include "launcher/wifi_keyboard.h"
 
 enum class RadioSettingsPage {
     Menu,
@@ -32,6 +28,7 @@ enum class RadioSettingsPage {
 bool radio_ui_init();
 void radio_ui_show_main();
 void radio_ui_hide();
+void radio_ui_deinit();
 void radio_ui_show_config(const char *ssid, const char *url);
 void radio_ui_show_wifi_list(const WifiNetworkView *networks, std::size_t count,
                              std::size_t selected, bool scanning,
@@ -40,6 +37,7 @@ void radio_ui_show_wifi_keyboard(const char *ssid, std::size_t password_length,
                                  WifiKeyboardPage page, std::size_t selected,
                                  const char *status = nullptr);
 void radio_ui_show_wifi_connecting(const char *ssid, const char *detail);
+void radio_ui_show_wifi_success(const char *ssid);
 const char *radio_ui_wifi_key(WifiKeyboardPage page, std::size_t index);
 std::size_t radio_ui_wifi_key_count(WifiKeyboardPage page);
 void radio_ui_set_network(bool connected, const char *detail);

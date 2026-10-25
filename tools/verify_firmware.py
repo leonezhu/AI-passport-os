@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import argparse
 import struct
 import sys
 from dataclasses import dataclass
@@ -169,8 +170,22 @@ def verify_sram_budget(build_dir: Path) -> None:
     print(f"SRAM budget: PASS (first heap region {heap} / min {MIN_STATIC_HEAP} bytes; {usage})")
 
 
+def verify_public_defaults(build_dir: Path) -> None:
+    cache = (build_dir / "CMakeCache.txt").read_text(encoding="utf-8")
+    if "PASSPORT_PUBLIC_RELEASE:BOOL=ON" not in cache.splitlines():
+        raise ValueError("public build must enable PASSPORT_PUBLIC_RELEASE")
+    defaults = (build_dir / "esp-idf/passport_muse/muse_proxy_defaults.h").read_text(encoding="utf-8")
+    lines = [line.strip() for line in defaults.splitlines()]
+    if '#define MUSE_DEFAULT_PROXY_HOST ""' not in lines or '#define MUSE_DEFAULT_PROXY_PORT 0' not in lines:
+        raise ValueError("public build must have empty proxy defaults")
+
+
 def main() -> int:
-    build_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "build").resolve()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("build_dir", nargs="?", default="build")
+    parser.add_argument("--public", action="store_true")
+    args = parser.parse_args()
+    build_dir = Path(args.build_dir).resolve()
     merged_path = build_dir / "FoloToy-AI-Passport-full.bin"
     flash_args_path = build_dir / "flash_args"
 
@@ -202,6 +217,9 @@ def main() -> int:
     try:
         verify_protected_layout(merged, build_dir)
         verify_sram_budget(build_dir)
+        if args.public:
+            verify_public_defaults(build_dir)
+            print("Public build defaults: PASS")
     except (OSError, UnicodeDecodeError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

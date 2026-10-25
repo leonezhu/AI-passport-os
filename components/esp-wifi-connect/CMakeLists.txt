@@ -7,6 +7,7 @@ if(IDF_VERSION_MAJOR GREATER_EQUAL 6)
     idf_component_register(
         SRCS
             "wifi_manager.cc"
+            "wifi_internet.cc"
             "wifi_configuration_ap.cc"
             "wifi_station.cc"
             "ssid_manager.cc"
@@ -16,7 +17,7 @@ if(IDF_VERSION_MAJOR GREATER_EQUAL 6)
         EMBED_TXTFILES
             "assets/wifi_configuration.html"
             "assets/wifi_configuration_done.html"
-        REQUIRES "esp_timer" "esp_http_server" "esp_wifi" "nvs_flash"
+        REQUIRES "esp_timer" "esp_http_server" "esp_wifi" "nvs_flash" "esp_http_client"
     )
 else()
     # v5
@@ -25,6 +26,7 @@ else()
     idf_component_register(
         SRCS
             "wifi_manager.cc"
+            "wifi_internet.cc"
             "wifi_configuration_ap.cc"
             "wifi_station.cc"
             "ssid_manager.cc"
@@ -34,7 +36,7 @@ else()
         EMBED_TXTFILES
             "assets/wifi_configuration.html"
             "assets/wifi_configuration_done.html"
-        REQUIRES "esp_timer" "esp_http_server" "esp_wifi" "nvs_flash" "json"
+        REQUIRES "esp_timer" "esp_http_server" "esp_wifi" "nvs_flash" "json" "esp_http_client"
     )
 endif()
 

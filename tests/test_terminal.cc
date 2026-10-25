@@ -1,3 +1,4 @@
+#include "ui/display_text.h"
 #include "ui/utf8_tail.h"
 #include "launcher/wake_gate.h"
 #include <cassert>
@@ -30,4 +31,15 @@ int main() {
         assert(reply.size() <= 1200);
         assert((static_cast<unsigned char>(reply[0]) & 0xC0) != 0x80);
     }
+
+    // Emoji and full-width ASCII would render as boxes in the subset font.
+    assert(passport::fold_display_text("好的😊👍🏻") == "好的");
+    assert(passport::fold_display_text("❤️✨⭐⏰") == "");
+    assert(passport::fold_display_text("👨‍👩‍👧家庭") == "家庭");
+    assert(passport::fold_display_text("１＋２＝３，５０％") == "1+2=3，50%");
+    assert(passport::fold_display_text("ＡＩ：好！（是）？～；") == "AI：好！（是）？～；");
+    assert(passport::fold_display_text("中\xE3\x80\x80" "文") == "中 文");
+    assert(passport::fold_display_text("【重点】25℃，3×4") == "【重点】25℃，3×4");
+    assert(passport::fold_display_text("A\xE4\xB8") == "A\xE4\xB8");  // truncated sequence
+    assert(passport::fold_display_text("A\xFF" "B") == "A\xFF" "B");
 }

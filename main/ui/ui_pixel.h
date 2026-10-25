@@ -25,6 +25,16 @@ lv_obj_t *ui_pixel_label(lv_obj_t *parent, const char *text,
 lv_obj_t *ui_pixel_label_ls(lv_obj_t *parent, const char *text,
                             const lv_font_t *font, uint32_t color,
                             int letter_space);
+// Avoid reallocating/invalidation when periodic status text has not changed.
+void ui_pixel_label_set_text(lv_obj_t *label, const char *text);
+// LVGL style setters invalidate even when the value is unchanged.
+void ui_pixel_bg_color(lv_obj_t *obj, uint32_t color);
+void ui_pixel_text_color(lv_obj_t *obj, uint32_t color);
+// Short, interruptible focus confirmation; no perpetual decorative timer.
+void ui_pixel_focus_feedback(lv_obj_t *obj);
+// Two bounded footer lines: current action, then navigation/secondary action.
+lv_obj_t *ui_pixel_footer(lv_obj_t *parent, const char *action, const char *navigation,
+                          const lv_font_t *font);
 lv_obj_t *ui_pixel_mascot_create(lv_obj_t *parent, int x, int y);
 void ui_pixel_mascot_jump(lv_obj_t *mascot);
 void ui_pixel_set_selected(lv_obj_t *panel, bool selected, bool enabled);
@@ -44,6 +54,11 @@ lv_obj_t *ui_pixel_hint_pill(lv_obj_t *parent, const char *text,
 // 对齐即垂直居中。
 lv_obj_t *ui_pixel_top_bar(lv_obj_t *parent);
 
+// Battery text starts at x=160; keep other status content before x=156.
+enum { UI_STATUS_CONTENT_RIGHT = 156, UI_STATUS_BATTERY_LEFT = 160 };
+void ui_pixel_status_text_align(lv_obj_t *label, int x, int width,
+                                lv_text_align_t align);
+
 // 像素电池:描边框 + 电量填充 + 百分比文字。
 // frame_color/文字色由调用方给(顶栏深底用白,纸面浅底用墨)。
 typedef struct {
@@ -54,6 +69,7 @@ ui_pixel_battery_t ui_pixel_battery_create(lv_obj_t *parent, int x, int y,
                                            uint32_t frame_color,
                                            const lv_font_t *font);
 void ui_pixel_battery_set(ui_pixel_battery_t *batt, int soc);  // soc<0 显示 "--"
+void ui_pixel_battery_set_on_dark(ui_pixel_battery_t *batt, int soc);
 
 // Wi-Fi 信号 3 格(几何条,不依赖图标字体)。
 void ui_pixel_wifi_bars_create(lv_obj_t *parent, int x, int y,

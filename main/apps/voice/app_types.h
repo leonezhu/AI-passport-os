@@ -67,12 +67,14 @@ typedef enum {
     APP_EV_LINK_DOWN,       // 链路断(连接断开或对端失联)
     APP_EV_LINK_DROP,       // 事件行因断连/未就绪被丢弃(UI toast 反馈)
     APP_EV_AUDIO_ERROR,     // 采集硬件错误
+    APP_EV_INIT_FAILED,     // Local transport/pipeline startup failed; re-enter to retry
     APP_EV_TONE_DONE,       // START 提示音播放完成(异步开流的信号,见 design)
     APP_EV_TICK,            // 100ms 心跳,驱动超时/息屏
     // ---- USB 有线通道(USB-Serial-JTAG,见 design.md)----
     APP_EV_USB_CONNECTED,   // USB 会话通(收到 PC 握手 ping;link_up 的 USB 侧充分条件)
     APP_EV_USB_DISCONNECTED, // USB 会话断(拔线:is_connected 翻转)
     APP_EV_TIME_SET,         // 校时下行(epoch 秒 UTC;双通道共用:CTRL time.set 行 + SYS time set)
+    APP_EV_PC_STATUS,        // Hotkey forwarder capability heartbeat (not ASR status)
 } app_event_type_t;
 
 // ---------------- 链路通道(双通道常开架构,2026-08-28) ----------------
@@ -150,6 +152,7 @@ typedef struct {
             bool final;                                 // false=预览态(未定稿);true=定稿落定
         } transcript;                                   // TRANSCRIPT
         struct { int64_t epoch; } time_set;             // TIME_SET(UTC 秒,int64 对齐 8,union 仍 ≤228B)
+        struct { bool audio_ready; bool hotkey_ready; } pc_status;
     } u;
 } app_event_t;
 
@@ -198,6 +201,8 @@ typedef struct {
 typedef struct {
     app_stage_t    state;
     bool           link_up;       // false → OFFLINE(link_name DISCONNECTED)横幅 + 禁 PTT;true = 通道已通
+    bool           pc_ready;      // Fresh PC audio + hotkey readiness, separate from UDP discovery
+    bool           init_failed;
     bool           screen_on;
     bool           panel_on;      // 面板供电(SLPIN 断电后 false)
     bool           net_busy;      // 音频丢帧中 → BUSY 横幅
@@ -205,6 +210,8 @@ typedef struct {
     char           link_name[8];  // 当前链路通道名:"BLE"/"USB"(断线横幅按此渲染)
     bool           battery_available;
     uint8_t        battery_soc;   // 0..100
+    bool           wifi_connected;
+    int8_t         wifi_rssi;     // Actual station signal, independent of PC discovery.
     char           agent_message[APP_AGENT_MSG_MAX];
     bool           transcript_final; // false → 当前 agent_message 是转写预览(未定稿,UI 加光标感)
     char           agent_state_name[16];

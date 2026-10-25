@@ -3,6 +3,7 @@
 #include "radio_player.h"
 
 #include "bsp_display.h"
+#include "launcher/power.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
 #include "esp_timer.h"
@@ -36,11 +37,10 @@ void shutdown_task(void *) {
         // display. The short delay lets the player task close its HTTP client.
         radio_player_set_playing(false);
         radio_player_set_network(false);
-        esp_wifi_stop();
         vTaskDelay(pdMS_TO_TICKS(200));
-        bsp_display_backlight(0);
-        vTaskDelay(pdMS_TO_TICKS(50));
-        esp_deep_sleep_start();
+        // Shared power off arms the UP-key wake; without a wake source the
+        // device could only be revived by unplugging the battery.
+        power_off(nullptr);
     }
 }
 

@@ -1,4 +1,5 @@
 #include "dns_server.h"
+#include "captive_dns.h"
 #include <esp_log.h>
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
@@ -90,19 +91,10 @@ void DnsServer::Run() {
             break;
         }
 
-        // Simple DNS response: point all queries to 192.168.4.1
-        buffer[2] |= 0x80;  // Set response flag
-        buffer[3] |= 0x80;  // Set Recursion Available
-        buffer[7] = 1;      // Set answer count to 1
-
-        // Add answer section
-        memcpy(&buffer[len], "\xc0\x0c", 2);  // Name pointer
-        len += 2;
-        memcpy(&buffer[len], "\x00\x01\x00\x01\x00\x00\x00\x1c\x00\x04", 10);  // Type, class, TTL, data length
-        len += 10;
-        memcpy(&buffer[len], &gateway_.addr, 4);  // 192.168.4.1
-        len += 4;
-        ESP_LOGI(TAG, "Sending DNS response to %s", inet_ntoa(gateway_.addr));
+        len = captive_dns_reply(reinterpret_cast<uint8_t*>(buffer), len,
+                                sizeof(buffer), &gateway_.addr);
+        if (len == 0) continue;
+        ESP_LOGD(TAG, "Sending DNS response to %s", inet_ntoa(gateway_.addr));
 
         sendto(fd_, buffer, len, 0, (struct sockaddr *)&client_addr, client_addr_len);
     }

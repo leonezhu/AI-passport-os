@@ -63,7 +63,7 @@ void boot_splash_run(void) {
     lv_obj_t *title = lv_label_create(s_splash);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(C_PHOS), 0);
-    lv_obj_set_style_text_letter_space(title, 3, 0);
+    lv_obj_set_style_text_letter_space(title, 2, 0);
     lv_label_set_text(title, "PASSPORT OS");
     lv_obj_align(title, LV_ALIGN_CENTER, 0, -26);
 
@@ -85,7 +85,7 @@ void boot_splash_run(void) {
     lv_obj_t *mask = blk(s_splash, title_x, title_y, title_w, title_h, C_BG);
     lv_obj_t *cursor = blk(s_splash, title_x, title_y, 2, title_h, C_PHOS);
 
-    // 进度条:14 格 10×10,间隙 3px,总宽 179,水平居中
+    // Decorative startup rhythm: these cells do not measure network progress.
     (void)blk(s_splash, (240 - (BAR_N * 13 - 3)) / 2, 186,
               BAR_N * 13 - 3, 10, UI_SURFACE_ALT);
     lv_obj_t *cells[BAR_N];

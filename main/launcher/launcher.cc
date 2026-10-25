@@ -1,22 +1,24 @@
 // Application drawer: shared phosphor palette and pixel icons.
 #include "launcher/launcher.h"
+#include "apps/voice/time_sync.h"
 #include "launcher/app_registry.h"
 #include "wifi_manager.h"
 #include "ssid_manager.h"
 #include "bsp_battery.h"
 #include "bsp_display.h"
 #include "ui_pixel.h"
+#include "ui/pixel_scene.h"
 #include "app_fonts.h"
 #include "esp_log.h"
 #include "lvgl.h"
 
 #include <cstdio>
+#include <initializer_list>
 
 static const char *TAG = "launcher";
 
 namespace {
 
-constexpr size_t kMaxApps = 8;
 constexpr size_t kIconParts = 10;
 
 // 旅行仪器配色:与首页(app_home.cc)完全同源,风格统一。
@@ -25,20 +27,48 @@ constexpr size_t kIconParts = 10;
 #define kPhos (UI_ACCENT)        // 琥珀:图标/标题/选中态
 #define kPhosDim (UI_TEXT_DIM)     // 灰米色:副标题/未选中
 #define kPhosBorder (UI_BORDER)  // 卡片/底板描边
+#define kStatus (ui_theme_is_multicolor() ? UI_TEXT : kPhos)
 
 lv_obj_t *s_screen;
 lv_obj_t *s_card;
-lv_obj_t *s_icon_plate;            // 图标底板(墨块+主题色描边)
-lv_obj_t *s_chip;                  // 英文副标题徽章(主题色底)
+lv_obj_t *s_previous, *s_next;
 lv_obj_t *s_app_title;
-lv_obj_t *s_app_subtitle;
+lv_obj_t *s_clock;
+lv_obj_t *s_page_number;
 lv_obj_t *s_icon;
 lv_obj_t *s_icon_parts[kIconParts];
-lv_obj_t *s_page_dots[kMaxApps];
 lv_obj_t *s_wifi_bars[3];
 ui_pixel_battery_t s_battery;
-size_t s_dot_count;
 size_t s_selected_index;
+
+void draw_catalogue_stage(lv_event_t *event) {
+    pixel_scene::Ink ink(event);
+    // A single ticket: notched corners and one accent tab. The page number in
+    // the corner is the only position cue, so no brackets or pager dots.
+    ink.box(0, 0, 216, 146, UI_SURFACE);
+    for (int x : {0, 210}) {
+        ink.box(x, 0, 6, 6, UI_BG); ink.box(x, 140, 6, 6, UI_BG);
+    }
+    ink.box(14, 12, 14, 2, UI_ACCENT);
+}
+
+// Up/down neighbours read as a wheel: a 7x4 pixel chevron before the name.
+void draw_neighbour_chevron(lv_event_t *event) {
+    auto *label = static_cast<lv_obj_t *>(lv_event_get_target(event));
+    const char *text = lv_label_get_text(label);
+    if (!text || !text[0]) return;
+    lv_point_t size;
+    lv_text_get_size(&size, text, lv_obj_get_style_text_font(label, LV_PART_MAIN), 0, 0,
+                     LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    const int w = lv_obj_get_width(label);
+    const int x = (w - size.x) / 2 - 14;
+    const bool up = lv_event_get_user_data(event) != nullptr;
+    pixel_scene::Ink ink(event);
+    for (int row = 0; row < 4; ++row) {
+        const int half = up ? row : 3 - row;
+        ink.box(x + 3 - half, 8 + row, 1 + half * 2, 1, UI_BORDER);
+    }
+}
 
 const char *app_chinese_name(passport_app_id_t id) {
     // 2026-09-13 修复(D1):名称原本在 launcher 里硬编码一份、在 passport_app_t
@@ -84,8 +114,33 @@ void set_frame(size_t index, int x, int y, int w, int h, uint32_t color,
     lv_obj_set_style_bg_opa(part, LV_OPA_COVER, 0);
 }
 
-// 88×88 画布上的像素图标,全部用 4px 网格对齐的方块拼
+// Shared neon accents stay outside every application's 88x88 icon geometry.
+void draw_icon_accents(lv_event_t *event) {
+    auto *icon = static_cast<lv_obj_t *>(lv_event_get_target(event));
+    lv_area_t origin;
+    lv_obj_get_coords(icon, &origin);
+    lv_layer_t *layer = lv_event_get_layer(event);
+    lv_draw_rect_dsc_t paint;
+    lv_draw_rect_dsc_init(&paint);
+    paint.bg_opa = LV_OPA_COVER;
+    if (ui_theme_get() == UI_THEME_NEON) {
+        const lv_area_t traces[] = {
+            {origin.x1 + 2, origin.y1 + 12, origin.x1 + 3, origin.y1 + 31},
+            {origin.x1 + 2, origin.y1 + 7, origin.x1 + 15, origin.y1 + 8},
+            {origin.x2 - 18, origin.y2 - 5, origin.x2 - 2, origin.y2 - 4},
+            {origin.x2 - 5, origin.y2 - 19, origin.x2 - 4, origin.y2 - 9},
+        };
+        for (int i = 0; i < 4; ++i) {
+            paint.bg_color = lv_color_hex(i < 2 ? UI_ACCENT : UI_SECONDARY);
+            lv_draw_rect(layer, &paint, &traces[i]);
+        }
+    }
+}
+
 void draw_app_icon(passport_app_id_t id, uint32_t color) {
+    const uint32_t detail = ui_theme_is_multicolor() ? UI_SECONDARY : color;
+    const uint32_t warm = ui_theme_is_multicolor() ? UI_TERTIARY : color;
+    lv_obj_invalidate(s_icon);
     for (lv_obj_t *part : s_icon_parts) lv_obj_add_flag(part, LV_OBJ_FLAG_HIDDEN);
 
     switch (id) {
@@ -101,12 +156,12 @@ void draw_app_icon(passport_app_id_t id, uint32_t color) {
         case APP_ID_RADIO:
             // 收音机:机身 + 喇叭点阵 + 刻度窗 + 天线
             set_frame(0, 10, 26, 68, 46, color, 4);
-            set_part(1, 18, 34, 24, 14, color);   // 喇叭
+            set_part(1, 18, 34, 24, 14, detail);   // 喇叭
             set_part(2, 18, 54, 24, 4, color);
             set_part(3, 18, 62, 24, 4, color);
             set_part(4, 50, 34, 20, 8, color);    // 刻度窗
             set_part(5, 50, 48, 20, 4, color);
-            set_part(6, 24, 14, 40, 4, color);    // 天线
+            set_part(6, 24, 14, 40, 4, detail);    // 天线
             set_part(7, 60, 10, 8, 8, color);     // 天线头
             break;
         case APP_ID_VOICE:
@@ -124,10 +179,18 @@ void draw_app_icon(passport_app_id_t id, uint32_t color) {
             set_part(1, 28, 30, 8, 12, color);    // 左眼
             set_part(2, 52, 30, 8, 12, color);    // 右眼
             set_part(3, 38, 50, 12, 4, color);    // 嘴
-            set_part(4, 42, 8, 4, 10, color);     // 天线
-            set_part(5, 38, 4, 12, 6, color);      // 天线头
-            set_part(6, 26, 64, 36, 6, color);     // 围巾
+            set_part(4, 42, 8, 4, 10, detail);     // 天线
+            set_part(5, 38, 4, 12, 6, detail);      // 天线头
+            set_part(6, 26, 64, 36, 6, warm);     // 围巾
             break;
+        case APP_ID_MUSE:
+                set_frame(0, 18, 18, 52, 46, color, 4);
+                set_part(1, 29, 31, 6, 12, color);
+                set_part(2, 53, 31, 6, 12, color);
+                set_part(3, 36, 53, 16, 4, color);
+                set_part(4, 6, 34, 8, 20, color);
+                set_part(5, 74, 34, 8, 20, color);
+                break;
         case APP_ID_WIFI:
             // 信号塔:四级阶梯(与其它图标的"方块"语言一致)
             set_part(0, 14, 56, 12, 18, color);
@@ -138,11 +201,11 @@ void draw_app_icon(passport_app_id_t id, uint32_t color) {
         case APP_ID_SETTINGS:
             // 滑块三行:横轨 + 错位方块钮
             set_part(0, 14, 20, 60, 6, color);
-            set_part(1, 14, 41, 60, 6, color);
-            set_part(2, 14, 62, 60, 6, color);
+            set_part(1, 14, 41, 60, 6, detail);
+            set_part(2, 14, 62, 60, 6, warm);
             set_part(3, 26, 14, 16, 18, color);
-            set_part(4, 52, 35, 16, 18, color);
-            set_part(5, 22, 56, 16, 18, color);
+            set_part(4, 52, 35, 16, 18, detail);
+            set_part(5, 22, 56, 16, 18, warm);
             break;
         case APP_ID_GAME:
             // 你在狗叫什么: 像素狗头(柴犬大脸 + 双折耳 + 眼鼻 + 汪汪大嘴)
@@ -153,6 +216,39 @@ void draw_app_icon(passport_app_id_t id, uint32_t color) {
             set_part(4, 50, 36, 8, 8, color);         // 右眼
             set_part(5, 38, 44, 8, 6, color);         // 黑鼻头
             set_part(6, 32, 54, 20, 8, color);        // 汪汪张开的大嘴
+            break;
+        case APP_ID_SOUND_JUMP:
+            // Same four-legged Claude silhouette as the game, matching theme in launcher.
+            set_part(0, 14, 16, 60, 40, color);
+            set_part(1, 4, 36, 80, 12, color);
+            set_part(2, 14, 56, 6, 14, color);
+            set_part(3, 26, 56, 6, 14, color);
+            set_part(4, 56, 56, 6, 14, color);
+            set_part(5, 68, 56, 6, 14, color);
+            set_part(6, 26, 26, 6, 12, UI_BG);
+            set_part(7, 56, 26, 6, 12, UI_BG);
+            break;
+        case APP_ID_STOPWATCH:
+            set_part(0, 34, 6, 20, 6, color);
+            set_part(1, 41, 12, 6, 8, color);
+            set_part(2, 66, 18, 10, 6, color);
+            set_frame(3, 16, 24, 56, 50, color, 4);
+            set_part(4, 41, 34, 6, 20, color);
+            set_part(5, 47, 48, 14, 6, color);
+            break;
+        case APP_ID_POMODORO:
+            // Stepped tomato outline and clock hands use the same 4px strokes.
+            // Carve the two overlapping body blocks with the current page color.
+            set_part(0, 42, 8, 4, 16, ui_theme_is_multicolor() ? UI_SUCCESS : color);
+            set_part(1, 26, 14, 16, 4, ui_theme_is_multicolor() ? UI_SUCCESS : color);
+            set_part(2, 46, 14, 16, 4, ui_theme_is_multicolor() ? UI_SUCCESS : color);
+            set_part(3, 24, 24, 40, 48, color);
+            set_part(4, 16, 32, 56, 32, color);
+            set_part(5, 28, 28, 32, 40, UI_BG);
+            set_part(6, 20, 36, 48, 24, UI_BG);
+            set_part(7, 42, 34, 4, 16, color);
+            set_part(8, 46, 46, 12, 4, color);
+            set_part(9, 42, 60, 4, 4, color);
             break;
         case APP_ID_TETRIS:
             // 俄罗斯方块:T/L/方 三种积木错落
@@ -175,45 +271,44 @@ void draw_app_icon(passport_app_id_t id, uint32_t color) {
 void update_card_content() {
     const passport_app_t *app = app_registry_get_by_index(s_selected_index);
     if (!app) return;
+    lv_obj_set_style_text_font(s_app_title,
+        app->id == APP_ID_POMODORO ? &pomodoro_font_20 : &ui_font_20, 0);
     lv_label_set_text(s_app_title, app_chinese_name(app->id));
-    lv_label_set_text(s_app_subtitle, app->en_name ? app->en_name : "");
-    draw_app_icon(app->id, kPhos);   // 单色磷光图标,与首页同一视觉语言
-
-    for (size_t i = 0; i < s_dot_count; ++i) {
-        const bool selected = i == s_selected_index;
-        lv_obj_set_size(s_page_dots[i], selected ? 18 : 8, 3);
-        lv_obj_set_style_bg_color(s_page_dots[i],
-                                  lv_color_hex(selected ? kPhos : kPhosDim), 0);
+    lv_label_set_text_fmt(s_page_number, "%02u / %02u", (unsigned)s_selected_index + 1,
+                          (unsigned)app_registry_get_count());
+    uint32_t color = kPhos;
+    if (ui_theme_is_multicolor()) {
+        switch (app->id) {
+            case APP_ID_RADIO: case APP_ID_GAME: case APP_ID_POMODORO: color = UI_TERTIARY; break;
+            case APP_ID_VOICE: case APP_ID_TETRIS: color = UI_SECONDARY; break;
+            case APP_ID_XIAOZHI: case APP_ID_STOPWATCH: color = UI_SUCCESS; break;
+            default: break;
+        }
+        ui_pixel_text_color(s_app_title, color);
     }
+    draw_app_icon(app->id, color);
+    lv_obj_invalidate(s_card);
+
+    const size_t count = app_registry_get_count();
+    const auto *previous = app_registry_get_by_index((s_selected_index + count - 1) % count);
+    const auto *next = app_registry_get_by_index((s_selected_index + 1) % count);
+    ui_pixel_label_set_text(s_previous, previous ? app_chinese_name(previous->id) : "");
+    ui_pixel_label_set_text(s_next, next ? app_chinese_name(next->id) : "");
 }
 
-// ---- 选卡动效(2026-09-13) ----
-// 卡片向切换方向轻推 8px 再弹回(硬阴影同步跟动),图标原地跳一下 ——
-// 与吉祥物起跳同族的"像素弹性"。纯 lv_anim,删屏时随对象自动清理。
-void card_x_anim(void *obj, int32_t v) { lv_obj_set_x((lv_obj_t *)obj, v); }
+// Selection follows physical UP/DOWN: only the icon settles, text stays readable.
+// One 140ms animation, reset to the same resting position even on rapid repeats.
 void icon_y_anim(void *obj, int32_t v) { lv_obj_set_y((lv_obj_t *)obj, v); }
 
 void card_nudge(int dir) {
-    if (!s_card) return;
-    lv_anim_delete(s_card, card_x_anim);
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, s_card);
-    lv_anim_set_exec_cb(&a, card_x_anim);
-    lv_anim_set_values(&a, 20, 20 - 8 * dir);
-    lv_anim_set_duration(&a, 70);
-    lv_anim_set_playback_duration(&a, 110);
-    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
-    lv_anim_start(&a);
     if (!s_icon) return;
     lv_anim_delete(s_icon, icon_y_anim);
     lv_anim_t b;
     lv_anim_init(&b);
     lv_anim_set_var(&b, s_icon);
     lv_anim_set_exec_cb(&b, icon_y_anim);
-    lv_anim_set_values(&b, 16, 11);   // 16 = 图标 TOP_MID 的静止 y
-    lv_anim_set_duration(&b, 80);
-    lv_anim_set_playback_duration(&b, 130);
+    lv_anim_set_values(&b, 18 - 6 * dir, 18);
+    lv_anim_set_duration(&b, 140);
     lv_anim_set_path_cb(&b, lv_anim_path_ease_out);
     lv_anim_start(&b);
 }
@@ -243,86 +338,56 @@ void launcher_ui_init(void) {
     lv_obj_set_style_pad_all(s_screen, 0, 0);
 
     // ---- 状态栏 (y0..24):与首页同款 —— 炭灰条 + 共享 Wi-Fi 格 + 电池 ----
-    block(s_screen, 0, 0, 240, 24, kCardBg);
-    block(s_screen, 0, 24, 240, 1, kPhosBorder);
+    ui_pixel_top_bar(s_screen);
     ui_pixel_wifi_bars_create(s_screen, 12, 18, s_wifi_bars);
-    s_battery = ui_pixel_battery_create(s_screen, 206, 6, kPhos,
+    s_battery = ui_pixel_battery_create(s_screen, 206, 6, kStatus,
                                         &lv_font_montserrat_14);
 
-    // ---- 应用卡:炭灰面板 + 细描边(与首页卡片同语言,无硬阴影) ----
-    s_card = block(s_screen, 20, 44, 200, 208,
-                   ui_theme_is_classic() ? kCardBg : kBg);
-    lv_obj_set_style_border_width(s_card, 1, 0);
-    lv_obj_set_style_border_side(s_card, ui_theme_is_classic()
-                                             ? LV_BORDER_SIDE_FULL
-                                             : LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_color(s_card, lv_color_hex(kPhosBorder), 0);
-
-    lv_obj_t *catalogue = ui_pixel_label(s_screen, "PASSPORT / TOOLS", &lv_font_montserrat_14, UI_TEXT_DIM);
-    lv_obj_set_pos(catalogue, 20, 29);
-
-    // ---- 图标底板:近黑内凹框,磷光单色图标压在上面 ----
-    s_icon_plate = block(s_card, 54, 14, 92, 92, kBg);
-    lv_obj_set_style_border_width(s_icon_plate, ui_theme_is_classic() ? 1 : 0, 0);
-    lv_obj_set_style_border_color(s_icon_plate, lv_color_hex(kPhosBorder), 0);
-
+    lv_obj_t *catalogue = ui_pixel_label(s_screen, "应用", &buddy_font_16, UI_TEXT);
+    ui_pixel_status_text_align(catalogue, 42, 40, LV_TEXT_ALIGN_LEFT);
+    s_clock = ui_pixel_label(s_screen, "--:--", &lv_font_montserrat_14, UI_TEXT);
+    ui_pixel_status_text_align(s_clock, 92, 56, LV_TEXT_ALIGN_CENTER);
+    s_previous = ui_pixel_label(s_screen, "", &buddy_font_16, UI_TEXT_DIM);
+    s_next = ui_pixel_label(s_screen, "", &buddy_font_16, UI_TEXT_DIM);
+    lv_obj_set_pos(s_previous, 12, 50); lv_obj_set_size(s_previous, 216, 22);
+    lv_obj_set_pos(s_next, 12, 242); lv_obj_set_size(s_next, 216, 22);
+    for (lv_obj_t *peek : {s_previous, s_next}) {
+        lv_obj_set_style_text_align(peek, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_opa(peek, LV_OPA_80, 0);
+        lv_label_set_long_mode(peek, LV_LABEL_LONG_DOT);
+    }
+    lv_obj_add_event_cb(s_previous, draw_neighbour_chevron, LV_EVENT_DRAW_MAIN_END, s_previous);
+    lv_obj_add_event_cb(s_next, draw_neighbour_chevron, LV_EVENT_DRAW_MAIN_END, nullptr);
+    s_card = block(s_screen, 12, 84, 216, 146, kCardBg);
+    lv_obj_add_event_cb(s_card, draw_catalogue_stage, LV_EVENT_DRAW_MAIN, nullptr);
+    s_page_number = ui_pixel_label(s_card, "", &lv_font_montserrat_14, UI_TEXT_DIM);
+    lv_obj_set_pos(s_page_number, 140, 6);
+    lv_obj_set_size(s_page_number, 64, 18);
+    lv_obj_set_style_text_align(s_page_number, LV_TEXT_ALIGN_RIGHT, 0);
     s_icon = lv_obj_create(s_card);
+    lv_obj_remove_style_all(s_icon);
     lv_obj_set_size(s_icon, 88, 88);
-    lv_obj_align(s_icon, LV_ALIGN_TOP_MID, 0, 16);
-    lv_obj_set_style_bg_opa(s_icon, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_icon, 0, 0);
-    lv_obj_set_style_pad_all(s_icon, 0, 0);
-    lv_obj_clear_flag(s_icon, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(s_icon, 64, 18);
+    lv_obj_remove_flag(s_icon, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(s_icon, draw_icon_accents, LV_EVENT_DRAW_MAIN, nullptr);
     for (lv_obj_t *&part : s_icon_parts) {
         part = lv_obj_create(s_icon);
-        lv_obj_set_style_pad_all(part, 0, 0);
-        lv_obj_clear_flag(part, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_remove_style_all(part);
+        lv_obj_set_style_bg_opa(part, LV_OPA_COVER, 0);
+        lv_obj_remove_flag(part, LV_OBJ_FLAG_SCROLLABLE);
     }
+    s_app_title = ui_pixel_label(s_card, "", &ui_font_20, UI_TEXT);
+    lv_obj_set_pos(s_app_title, 0, 105); lv_obj_set_size(s_app_title, 216, 28);
+    lv_label_set_long_mode(s_app_title, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(s_app_title, LV_TEXT_ALIGN_CENTER, 0);
 
-    s_app_title = ui_pixel_label_ls(s_card, "", &ui_font_20, UI_TEXT, UI_LS_TITLE);
-    lv_obj_align(s_app_title, LV_ALIGN_TOP_MID, 0, 116);
-
-    // ---- 英文副标题:细框铭牌(灰米色描边 + 琥珀文字) ----
-    s_chip = block(s_card, 8, 150, 184, 22, kBg);
-    lv_obj_set_style_border_width(s_chip, ui_theme_is_classic() ? 1 : 0, 0);
-    lv_obj_set_style_border_color(s_chip, lv_color_hex(kPhosBorder), 0);
-    s_app_subtitle = lv_label_create(s_chip);
-    lv_obj_set_style_text_font(s_app_subtitle, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_app_subtitle, lv_color_hex(kPhos), 0);
-    lv_obj_set_style_text_letter_space(s_app_subtitle, 1, 0);
-    lv_obj_set_width(s_app_subtitle, 184);
-    lv_label_set_long_mode(s_app_subtitle, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_style_text_align(s_app_subtitle, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(s_app_subtitle, LV_ALIGN_CENTER, 0, 0);
-
-    // ---- 页点:像素小方块,选中拉长并染主题色 ----
-    s_dot_count = app_registry_get_count();
-    if (s_dot_count > kMaxApps) s_dot_count = kMaxApps;
-    lv_obj_t *dots = lv_obj_create(s_screen);
-    lv_obj_set_size(dots, 150, 12);
-    lv_obj_align(dots, LV_ALIGN_TOP_MID, 0, 262);
-    lv_obj_set_flex_flow(dots, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(dots, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(dots, 7, 0);
-    lv_obj_set_style_pad_all(dots, 0, 0);
-    lv_obj_set_style_bg_opa(dots, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(dots, 0, 0);
-    lv_obj_clear_flag(dots, LV_OBJ_FLAG_SCROLLABLE);
-    for (size_t i = 0; i < s_dot_count; ++i) {
-        s_page_dots[i] = lv_obj_create(dots);
-        lv_obj_set_style_radius(s_page_dots[i], 0, 0);
-        lv_obj_set_style_border_width(s_page_dots[i], 0, 0);
-        lv_obj_set_style_pad_all(s_page_dots[i], 0, 0);
-        lv_obj_clear_flag(s_page_dots[i], LV_OBJ_FLAG_SCROLLABLE);
-    }
-
-    ui_pixel_hint_pill(s_screen, "上下选择  确定进入", &buddy_font_16);
+    ui_pixel_footer(s_screen, "上下选择 · 确定打开", "长按确定返回首页", &buddy_font_16);
 
     update_card_content();
     launcher_ui_update_status();
     lv_scr_load(s_screen);
     bsp_lvgl_unlock();
-    ESP_LOGI(TAG, "Launcher UI initialized (travel instrument), %u apps", (unsigned)s_dot_count);
+    ESP_LOGI(TAG, "Launcher UI initialized (travel instrument), %u apps", (unsigned)app_registry_get_count());
 }
 
 void launcher_ui_show(void) {
@@ -344,21 +409,19 @@ void launcher_ui_hide(void) {
     if (s_screen) lv_obj_delete(s_screen);
     s_screen = nullptr;
     s_card = nullptr;
-    s_icon_plate = nullptr;
-    s_chip = nullptr;
+    s_previous = s_next = nullptr;
     s_app_title = nullptr;
-    s_app_subtitle = nullptr;
+    s_page_number = nullptr;
     s_icon = nullptr;
     s_battery = {nullptr, nullptr};
     for (lv_obj_t *&part : s_icon_parts) part = nullptr;
-    for (lv_obj_t *&dot : s_page_dots) dot = nullptr;
     for (lv_obj_t *&bar : s_wifi_bars) bar = nullptr;
-    s_dot_count = 0;
     bsp_lvgl_unlock();
 }
 
 void launcher_ui_update_status(void) {
     if (!s_screen) return;
+    char time[8]; time_sync_format_local(time, sizeof(time)); ui_pixel_label_set_text(s_clock, time);
     ui_pixel_battery_set(&s_battery, bsp_battery_soc());
 
     const bool connected = WifiManager::GetInstance().IsConnected();
@@ -367,7 +430,7 @@ void launcher_ui_update_status(void) {
     if (connected) {
         const int rssi = WifiManager::GetInstance().GetRssi();
         bars = rssi >= -60 ? 3 : (rssi >= -75 ? 2 : 1);
-        color = kPhos;
+        color = kStatus;
     }
     ui_pixel_wifi_bars_set(s_wifi_bars, bars, color);
 }
@@ -378,14 +441,14 @@ void launcher_ui_on_key(uint8_t btn, app_btn_event_t event) {
     if (!count) return;
 
     if (btn == BSP_BTN_UP && event == BTN_EVT_CLICK) {
-        // 上键 = 往左走(上一张):内容左移
+        // Previous app: a short vertical icon cue, with text kept still.
         s_selected_index = (s_selected_index + count - 1) % count;
         bsp_lvgl_lock(-1);
         update_card_content();
         card_nudge(1);
         bsp_lvgl_unlock();
     } else if (btn == BSP_BTN_DOWN && event == BTN_EVT_CLICK) {
-        // 下键 = 往右走(下一张):内容右移
+        // Next app: reverse the same short cue.
         s_selected_index = (s_selected_index + 1) % count;
         bsp_lvgl_lock(-1);
         update_card_content();

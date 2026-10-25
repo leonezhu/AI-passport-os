@@ -23,6 +23,7 @@ struct WifiApRecord {
     int channel;
     wifi_auth_mode_t authmode;
     uint8_t bssid[6];
+    int8_t rssi;
 };
 
 /**
@@ -56,7 +57,12 @@ public:
     void OnDisconnected(std::function<void(int reason)> on_disconnected);
     void OnScanBegin(std::function<void()> on_scan_begin);
     void SetScanIntervalRange(int min_interval_seconds, int max_interval_seconds);
+    // Someone is using the device: if we are idle waiting out the backoff,
+    // scan now and restart the backoff from the minimum. Throttled.
+    void ScanNow();
     void SetHostname(const std::string& hostname) { hostname_ = hostname; }
+    void SetPreferredSsid(std::function<std::string()> provider) { preferred_ssid_ = std::move(provider); }
+    void SetNetworkAllowed(std::function<bool(const std::string&)> predicate) { network_allowed_ = std::move(predicate); }
 
     // How many times to retry the strongest same-SSID AP before falling back to
     // a weaker one. Only effective when remember_bssid is off (default). A value
@@ -78,6 +84,7 @@ private:
     uint8_t remember_bssid_;
     uint8_t failure_retry_cnt_ = 3;  // Retries on strongest AP before falling back
     int reconnect_count_ = 0;
+    int64_t last_scan_now_us_ = 0;
 
     // Exponential backoff for scan interval
     int scan_min_interval_microseconds_ = 10 * 1000 * 1000;   // Default 10 seconds
@@ -88,9 +95,13 @@ private:
     std::function<void(int reason)> on_disconnected_;
     std::function<void()> on_scan_begin_;
     std::vector<WifiApRecord> connect_queue_;
+    std::function<std::string()> preferred_ssid_;
+    std::function<bool(const std::string&)> network_allowed_;
     bool was_connected_ = false;  // Track if we were connected before disconnection
 
     void HandleScanResult();
+    void StartScan();
+    void ScheduleNextScan();
     void StartConnect();
     void UpdateScanInterval();  // Exponential backoff for scan interval
     static void WifiEventHandler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);

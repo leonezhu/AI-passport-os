@@ -2,37 +2,91 @@
 #include "ui_pixel.h"
 
 #include <stdio.h>
+#include <string.h>
 
-static ui_theme_t s_ui_theme = UI_THEME_TRAVEL;
+static ui_theme_t s_ui_theme = UI_THEME_CLASSIC;
 
-/* Two palettes share every font, image and screen layout. This costs 80 bytes
- * of read-only colour data and one byte of live state, not a second UI tree. */
+/* Palettes share fonts, images and layout; colour data adds no live UI tree. */
 static const uint32_t s_palettes[UI_THEME_COUNT][UI_COLOR_COUNT] = {
     [UI_THEME_CLASSIC] = {
         0x03120B, 0x091E14, 0x122E20, 0x37694B, 0xA8EDBB,
-        0x80AF90, 0x8CF5A6, 0xFF9585, 0x03120B, 0x8CF5A6,
+        0x80AF90, 0x8CF5A6, 0xFF9585, 0x03120B, 0x8CF5A6, 0xF2CA6D,
+        0x8CF5A6, 0x8CF5A6,
     },
     [UI_THEME_TRAVEL] = {
         0x181B1C, 0x202526, 0x303738, 0x59605D, 0xEEE7D6,
-        0xB3B2A5, 0xDDB36C, 0xF09B87, 0x181B1C, 0x9DB89A,
+        0xB3B2A5, 0xDDB36C, 0xF09B87, 0x181B1C, 0x9DB89A, 0xDDB36C,
+        0xDDB36C, 0xDDB36C,
     },
+    [UI_THEME_PLAYFUL] = {
+        0xF5F7F6, 0xE8EFEC, 0xD7E9E1, 0x7B8885, 0x252D30,
+        0x56635F, 0xA5315B, 0xAE302E, 0xFFFFFF, 0x286B59, 0x805710,
+        0x28648B, 0xA64B29,
+    },
+    [UI_THEME_NEON] = {
+        0x0A0B10, 0x17151F, 0x252B32, 0x596373, 0xF4F4F6,
+        0xA4AFC0, 0x38E8E1, 0xFF747D, 0x10131A, 0xAAEE6D, 0xFFD45A,
+        0xFF78CA, 0xFFB75E,
+    },
+};
+
+static const uint32_t s_playful_dark[UI_COLOR_COUNT] = {
+    0x181B1C, 0x202725, 0x2D3935, 0x53605D, 0xE9EDEB,
+    0xAFBDB7, 0xF58FAA, 0xFF968A, 0x181B1C, 0x8DDFC5, 0xFFD37D,
+    0x86C9FF, 0xFFAD78,
 };
 
 void ui_theme_set(ui_theme_t theme)
 {
-    s_ui_theme = theme < UI_THEME_COUNT ? theme : UI_THEME_TRAVEL;
+    s_ui_theme = (unsigned)theme < UI_THEME_COUNT ? theme : UI_THEME_CLASSIC;
 }
 
 ui_theme_t ui_theme_get(void) { return s_ui_theme; }
 bool ui_theme_is_classic(void) { return s_ui_theme == UI_THEME_CLASSIC; }
+bool ui_theme_is_multicolor(void)
+{
+    return s_ui_theme == UI_THEME_PLAYFUL || s_ui_theme == UI_THEME_NEON;
+}
 uint32_t ui_theme_color(ui_color_role_t role)
 {
-    if (role >= UI_COLOR_COUNT) role = UI_COLOR_TEXT;
+    if ((unsigned)role >= UI_COLOR_COUNT) role = UI_COLOR_TEXT;
     return s_palettes[s_ui_theme][role];
+}
+uint32_t ui_theme_color_on_dark(ui_color_role_t role)
+{
+    if ((unsigned)role >= UI_COLOR_COUNT) role = UI_COLOR_TEXT;
+    return s_ui_theme == UI_THEME_PLAYFUL ? s_playful_dark[role] : ui_theme_color(role);
+}
+uint32_t ui_theme_portrait_color(uint8_t level)
+{
+    const uint32_t bg = ui_theme_color_on_dark(UI_COLOR_BG);
+    const uint32_t fg = s_ui_theme == UI_THEME_PLAYFUL ? 0xF1EEE6 : ui_theme_color_on_dark(UI_COLOR_TEXT);
+    if (level > 3) level = 3;
+    uint32_t color = 0;
+    for (int shift = 0; shift <= 16; shift += 8) {
+        const unsigned a = (bg >> shift) & 255, b = (fg >> shift) & 255;
+        color |= ((a * (3-level) + b * level) / 3) << shift;
+    }
+    return color;
+}
+uint32_t ui_theme_portrait_subject_color(uint8_t level)
+{
+    static const uint32_t colors[UI_THEME_COUNT][4] = {
+        {0x254D36, 0x4B8060, 0x80B795, 0xA8EDBB},
+        {0x484D43, 0x797D69, 0xB6B7A0, 0xEEE7D6},
+        {0x374543, 0x637771, 0xADBFB1, 0xF1EEE6},
+        {0x343C55, 0x657593, 0xB3C5D8, 0xF4F4F6},
+    };
+    return colors[s_ui_theme][level > 3 ? 3 : level];
 }
 const char *ui_theme_name(ui_theme_t theme)
 {
-    return theme == UI_THEME_CLASSIC ? "经典绿" : "旅行仪器";
+    switch (theme) {
+        case UI_THEME_TRAVEL: return "旅行仪器";
+        case UI_THEME_PLAYFUL: return "像素白";
+        case UI_THEME_NEON: return "霓虹黑";
+        default: return "经典绿";
+    }
 }
 
 static void start_blink(lv_obj_t *eye);
@@ -66,6 +120,62 @@ lv_obj_t *ui_pixel_label(lv_obj_t *parent, const char *text,
                          const lv_font_t *font, uint32_t color)
 {
     return ui_pixel_label_ls(parent, text, font, color, UI_LS_BODY);
+}
+
+void ui_pixel_label_set_text(lv_obj_t *label, const char *text)
+{
+    if (label && text && strcmp(lv_label_get_text(label), text) != 0)
+        lv_label_set_text(label, text);
+}
+
+void ui_pixel_bg_color(lv_obj_t *obj, uint32_t color)
+{
+    if (obj && !lv_color_eq(lv_obj_get_style_bg_color(obj, 0), lv_color_hex(color)))
+        lv_obj_set_style_bg_color(obj, lv_color_hex(color), 0);
+}
+
+void ui_pixel_text_color(lv_obj_t *obj, uint32_t color)
+{
+    if (obj && !lv_color_eq(lv_obj_get_style_text_color(obj, 0), lv_color_hex(color)))
+        lv_obj_set_style_text_color(obj, lv_color_hex(color), 0);
+}
+
+static void focus_opa(void *obj, int32_t value)
+{
+    lv_obj_set_style_bg_opa((lv_obj_t *)obj, value, 0);
+}
+
+void ui_pixel_focus_feedback(lv_obj_t *obj)
+{
+    if (!obj) return;
+    lv_anim_delete(obj, focus_opa);
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, obj);
+    lv_anim_set_exec_cb(&a, focus_opa);
+    lv_anim_set_values(&a, LV_OPA_70, LV_OPA_COVER);
+    lv_anim_set_duration(&a, 140);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
+}
+
+lv_obj_t *ui_pixel_footer(lv_obj_t *parent, const char *action, const char *navigation,
+                          const lv_font_t *font)
+{
+    // Key hints recede behind content: dim action, navigation one step quieter
+    // (80% keeps >= 3.8:1 even on the light theme).
+    block(parent, 12, 272, 216, 1, UI_BORDER);
+    lv_obj_t *primary = ui_pixel_label(parent, action, font, UI_TEXT_DIM);
+    lv_obj_t *secondary = ui_pixel_label(parent, navigation, font, UI_TEXT_DIM);
+    lv_obj_set_style_text_opa(secondary, LV_OPA_80, 0);
+    lv_obj_t *lines[] = {primary, secondary};
+    for (int i = 0; i < 2; ++i) {
+        lv_obj_set_pos(lines[i], 12, 276 + i * 22);
+        lv_obj_set_size(lines[i], 216, 20);
+        lv_obj_set_style_text_align(lines[i], LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(lines[i], LV_LABEL_LONG_MODE_DOTS);
+    }
+    return primary;
 }
 
 // Preserve the clock-theme API without retaining pointers to deleted screens.
@@ -236,7 +346,21 @@ lv_obj_t *ui_pixel_top_bar(lv_obj_t *parent)
     lv_obj_set_style_border_width(bar, 1, 0);
     lv_obj_set_style_border_side(bar, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(bar, lv_color_hex(UI_BORDER), 0);
+    if (s_ui_theme == UI_THEME_NEON) {
+        lv_obj_set_style_bg_color(bar, lv_color_hex(UI_BG), 0);
+    }
     return bar;
+}
+
+void ui_pixel_status_text_align(lv_obj_t *label, int x, int width,
+                                lv_text_align_t align)
+{
+    const lv_font_t *font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
+    const int height = lv_font_get_line_height(font);
+    lv_obj_set_pos(label, x, (25 - height) / 2);
+    lv_obj_set_size(label, width, height);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_style_text_align(label, align, 0);
 }
 
 ui_pixel_battery_t ui_pixel_battery_create(lv_obj_t *parent, int x, int y,
@@ -254,32 +378,45 @@ ui_pixel_battery_t ui_pixel_battery_create(lv_obj_t *parent, int x, int y,
     b.fill = block(frame, 2, 2, 2, 6, frame_color);
     lv_obj_set_style_radius(b.fill, 0, 0);
 
-    // 宽度按最宽内容 "100%"(约35px) 取 38,窄了会折行把百分比挤到下一行
+    // Reserve the widest percentage as a single status-bar line.
     b.label = ui_pixel_label(parent, "--", font, frame_color);
-    lv_obj_set_pos(b.label, x - 42, y - 2);
-    lv_obj_set_width(b.label, 38);
+    const int height = lv_font_get_line_height(font);
+    lv_obj_set_pos(b.label, x - 46, y + (12 - height) / 2);
+    lv_obj_set_size(b.label, 42, height);
+    lv_label_set_long_mode(b.label, LV_LABEL_LONG_MODE_CLIP);
     lv_obj_set_style_text_align(b.label, LV_TEXT_ALIGN_RIGHT, 0);
     return b;
 }
 
-void ui_pixel_battery_set(ui_pixel_battery_t *batt, int soc)
+static void battery_set(ui_pixel_battery_t *batt, int soc, bool dark)
 {
     if (!batt || !batt->fill || !batt->label) return;
     char text[8];
-    uint32_t color;
+    ui_color_role_t role;
     if (soc >= 0 && soc <= 100) {
         // 满电绿、中段黄、低电红 —— 与整机"状态色"语义一致。
-        color = soc <= 15 ? (uint32_t)UI_RED
-                          : (soc <= 35 ? (uint32_t)UI_ORANGE : (uint32_t)UI_GRASS);
+        role = soc <= 15 ? UI_COLOR_DANGER
+                        : (soc <= 35 ? UI_COLOR_WARNING : UI_COLOR_SUCCESS);
         snprintf(text, sizeof(text), "%d%%", soc);
         lv_obj_set_width(batt->fill, 1 + (17 * soc) / 100);
     } else {
-        color = UI_TEXT_DIM;
+        role = UI_COLOR_TEXT_DIM;
         snprintf(text, sizeof(text), "--");
         lv_obj_set_width(batt->fill, 1);
     }
-    lv_obj_set_style_bg_color(batt->fill, lv_color_hex(color), 0);
-    lv_label_set_text(batt->label, text);
+    lv_obj_set_flag(batt->fill, LV_OBJ_FLAG_HIDDEN, soc <= 0 || soc > 100);
+    ui_pixel_bg_color(batt->fill, dark ? ui_theme_color_on_dark(role) : ui_theme_color(role));
+    ui_pixel_label_set_text(batt->label, text);
+}
+
+void ui_pixel_battery_set(ui_pixel_battery_t *batt, int soc)
+{
+    battery_set(batt, soc, false);
+}
+
+void ui_pixel_battery_set_on_dark(ui_pixel_battery_t *batt, int soc)
+{
+    battery_set(batt, soc, true);
 }
 
 void ui_pixel_wifi_bars_create(lv_obj_t *parent, int x, int y, lv_obj_t *bars[3])
@@ -296,7 +433,9 @@ void ui_pixel_wifi_bars_set(lv_obj_t *bars[3], int level, uint32_t color)
 {
     for (int i = 0; i < 3; ++i) {
         if (!bars[i]) continue;
-        lv_obj_set_style_bg_color(bars[i], lv_color_hex(color), 0);
-        lv_obj_set_style_bg_opa(bars[i], i < level ? LV_OPA_COVER : LV_OPA_30, 0);
+        ui_pixel_bg_color(bars[i], color);
+        const lv_opa_t opa = i < level ? LV_OPA_COVER : LV_OPA_30;
+        if (lv_obj_get_style_bg_opa(bars[i], 0) != opa)
+            lv_obj_set_style_bg_opa(bars[i], opa, 0);
     }
 }

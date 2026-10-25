@@ -4,6 +4,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -19,7 +20,23 @@ typedef struct {
     uint8_t humidity;  /* 相对湿度 % */
     uint8_t wind_kmh;  /* 10 米风速 km/h(取整) */
     uint16_t wind_dir; /* 10 米风向,度(0=北,顺时针) */
+    uint32_t updated_at; /* 拉取成功时的 UTC 秒;0 = 未知(当时未校时) */
 } home_weather_t;
+
+// Open-Meteo/CAMS model concentration, not a Chinese AQI or indoor measurement.
+// Volatile only: reuse the same city's sample for 30 minutes across app visits.
+// Failed requests, city changes, expiry and device restarts invalidate it.
+typedef struct {
+    bool valid;
+    uint32_t pm25_x10; /* tenths of micrograms per cubic metre */
+} home_air_quality_t;
+
+bool home_air_quality_get(home_air_quality_t *out);
+esp_err_t home_air_quality_refresh(const char *lat, const char *lon);
+void home_air_quality_label(bool connected, char *out, size_t capacity);
+// Cancel bounded asynchronous HTTPS work before the Home task is stopped.
+void home_weather_allow_requests(void);
+void home_weather_cancel_requests(void);
 
 // 读 NVS 缓存。UI 立即有"上次天气"可显示。
 void home_weather_init(void);
@@ -37,6 +54,10 @@ const char *home_weather_wind_dir_text(uint16_t deg);
 
 // 阻塞拉取(lat/lon 为十进制字符串)。在首页后台任务里调用,勿持 LVGL 锁。
 esp_err_t home_weather_refresh(const char *lat, const char *lon);
+
+// 数据年龄短语:"刚刚"/"25分钟前"/"3小时前"/"2天前";updated_at 或 now 未知时
+// 返回 "离线数据"。纯函数,便于宿主测试。
+void home_weather_age_text(uint32_t updated_at, int64_t now, char *out, size_t capacity);
 
 // 每次成功刷新递增,UI 据此刷新天气行。
 uint32_t home_weather_version(void);

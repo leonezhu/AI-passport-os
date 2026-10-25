@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <stdatomic.h>
 
 static const char *TAG = "game_sfx";
 
@@ -33,13 +34,17 @@ static const sfx_seg_t kTone[GS_COUNT][3] = {
 };
 
 static TaskHandle_t s_task;
-static volatile int s_pending;   /* 0 = 无请求;只保留最后一次,不排队 */
+static portMUX_TYPE s_task_mux = portMUX_INITIALIZER_UNLOCKED;
+static atomic_bool s_quit;
+static atomic_bool s_running;
+static atomic_int s_pending;     /* 0 = 无请求;只保留最后一次,不排队 */
 static bool s_muted;             /* codec 确实不可用后置 true,不再重试/刷日志 */
 
 /* 写一块 PCM,失败则有界等待 codec 就绪后重试。
    返回 false = 等满 SFX_READY_WAIT_MS 仍写不进去(codec 真的没开)。 */
 static bool write_blocking(const int16_t *buf, size_t bytes) {
     for (int waited = 0; waited < SFX_READY_WAIT_MS; waited += SFX_READY_STEP_MS) {
+        if (atomic_load(&s_quit)) return false;
         if (bsp_audio_write(buf, bytes) == ESP_OK) return true;
         vTaskDelay(pdMS_TO_TICKS(SFX_READY_STEP_MS));
     }
@@ -54,7 +59,7 @@ static void play_seg(uint16_t hz, uint16_t ms) {
     const int half = period > 1 ? period / 2 : 1;
     int left = (int)SFX_RATE * ms / 1000;
     int phase = 0;
-    while (left > 0) {
+    while (left > 0 && !atomic_load(&s_quit)) {
         const int n = left < SFX_CHUNK ? left : SFX_CHUNK;
         for (int i = 0; i < n; ++i) {
             buf[i] = (phase < half) ? (int16_t)SFX_AMP : (int16_t)-SFX_AMP;
@@ -76,8 +81,8 @@ static void sfx_task(void *arg) {
     for (;;) {
         /* 等待通知:不占队列 RAM,也不需要额外的信号量。 */
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        const int id = s_pending;
-        s_pending = 0;
+        if (atomic_load(&s_quit)) break;
+        const int id = atomic_exchange(&s_pending, 0);
         if (id <= GS_NONE || id >= GS_COUNT || s_muted) continue;
         for (int i = 0; i < 3; ++i) {
             const sfx_seg_t *seg = &kTone[id][i];
@@ -85,29 +90,48 @@ static void sfx_task(void *arg) {
             play_seg(seg->hz, seg->ms);
         }
     }
+    taskENTER_CRITICAL(&s_task_mux);
+    s_task = NULL;
+    taskEXIT_CRITICAL(&s_task_mux);
+    atomic_store(&s_running, false);
+    vTaskDelete(NULL);
 }
 
 void game_sfx_start(void) {
-    if (s_task) return;
+    if (atomic_load(&s_running)) return;
     s_pending = 0;
     s_muted = false;
+    atomic_store(&s_quit, false);
+    atomic_store(&s_running, true);
     /* 优先级 5(高于 LVGL 4):提示音只有几十毫秒,且 I2S 写阻塞时会让出 CPU,
        不会拖慢渲染;低于它会让音效明显滞后于画面。 */
     if (xTaskCreate(sfx_task, "game_sfx", 2048, NULL, 5, &s_task) != pdPASS) {
         ESP_LOGW(TAG, "音效任务创建失败,本局无音效");
         s_task = NULL;
+        atomic_store(&s_running, false);
     }
 }
 
 void game_sfx_stop(void) {
-    if (!s_task) return;
-    vTaskDelete(s_task);
-    s_task = NULL;
+    game_sfx_prepare_stop();
     s_pending = 0;
 }
 
+bool game_sfx_prepare_stop(void) {
+    atomic_store(&s_quit, true);
+    // A worker cannot clear/delete its handle between this check and notify.
+    taskENTER_CRITICAL(&s_task_mux);
+    if (s_task) xTaskNotifyGive(s_task);
+    taskEXIT_CRITICAL(&s_task_mux);
+    return !atomic_load(&s_running);
+}
+
 void game_sfx_play(game_sfx_t id) {
-    if (!s_task || id <= GS_NONE || id >= GS_COUNT) return;
-    s_pending = (int)id;
-    xTaskNotifyGive(s_task);
+    if (id <= GS_NONE || id >= GS_COUNT) return;
+    taskENTER_CRITICAL(&s_task_mux);
+    if (s_task && !atomic_load(&s_quit)) {
+        atomic_store(&s_pending, (int)id);
+        xTaskNotifyGive(s_task);
+    }
+    taskEXIT_CRITICAL(&s_task_mux);
 }

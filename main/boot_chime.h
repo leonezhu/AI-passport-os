@@ -2,6 +2,7 @@
 // 纯程序合成,无音频素材;专用短命任务里播放,播完立即 bsp_audio_deinit
 // 把 codec/DMA 内存还给系统 —— 开机只借不占。
 #pragma once
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -9,6 +10,7 @@ extern "C" {
 
 // 创建一次性任务播放开机音(异步,不阻塞启动流程)。重复调用无害。
 void boot_chime_start(void);
+bool boot_chime_busy(void);
 
 #ifdef __cplusplus
 }

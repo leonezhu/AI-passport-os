@@ -35,6 +35,7 @@ static int s_sock = -1;
 static volatile bool s_active = false;
 static TaskHandle_t s_rx_task = NULL;
 static SemaphoreHandle_t s_tx_mux = NULL;
+static StaticSemaphore_t s_tx_mux_storage;
 
 // 已学到的对端地址(只有 RX 任务在收到 beacon 时写;s_peer_mux 保护)
 static struct sockaddr_in s_peer;
@@ -198,6 +199,9 @@ static void rx_task(void *arg)
                     send_device_hello();
                 }
             } else if (type == VOICE_UDP_T_EVENT) {
+                struct sockaddr_in peer;
+                if (!peer_snapshot(&peer) || peer.sin_addr.s_addr != src.sin_addr.s_addr ||
+                    src.sin_port != peer.sin_port) continue;
                 peer_refresh(&src);
                 size_t plen = (size_t)n - 1;
                 if (plen > APP_PROTO_RX_CAP) plen = APP_PROTO_RX_CAP;   // 截断防御
@@ -250,7 +254,7 @@ int udp_audio_init(void)
     if (s_sock >= 0) return 0;   // 幂等
 
     if (s_tx_mux == NULL) {
-        s_tx_mux = xSemaphoreCreateMutex();
+        s_tx_mux = xSemaphoreCreateMutexStatic(&s_tx_mux_storage);
         if (s_tx_mux == NULL) {
             ESP_LOGE(TAG, "TX 互斥创建失败");
             return -1;

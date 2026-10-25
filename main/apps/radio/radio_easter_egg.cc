@@ -382,7 +382,8 @@ void easter_task(void *) {
                         s_stop_requested.store(true);
                         break;
                     }
-                    bsp_audio_set_volume(radio_player_volume());
+                    // The shared driver already applies the system volume.
+                    bsp_audio_set_volume(100);
                     format_ready = true;
                 }
                 if (!video_started) {

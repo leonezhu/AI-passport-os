@@ -9,6 +9,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "adpcm.h"
+#include <stdlib.h>
 
 static const char *TAG = "audio";
 
@@ -51,10 +52,50 @@ static adpcm_state_t s_adpcm;                 // 仅 ble_worker 上下文访问(
 #define WORKER_EXIT_TIMEOUT_MS 200   // 等采集 worker 退出阻塞读(原 30×5ms 轮询)
 #endif
 
-static StaticRingbuffer_t s_ring_struct;
-static uint8_t s_ring_storage[RING_BYTES] __attribute__((aligned(4)));   // NOSPLIT 要求 4B 对齐
+// Session-owned storage: inactive Voice must not take SRAM from Xiaozhi/Muse.
+typedef struct {
+    StaticRingbuffer_t ring;
+    StaticTask_t audio_tcb, send_tcb;
+    StackType_t *audio_stack;
+    StackType_t *send_stack;
+    uint8_t *ring_storage;
+    uint8_t *chunk;
+} stream_memory_t;
+static stream_memory_t *s_memory;
+// Keep the proven stack and buffer sizes, but do not require one ~18 KiB hole.
+// Every allocation is session-owned and is released only after both tasks stop.
+static void stream_memory_free(void) {
+    if (!s_memory) return;
+    free(s_memory->chunk);
+    free(s_memory->ring_storage);
+    free(s_memory->send_stack);
+    free(s_memory->audio_stack);
+    free(s_memory);
+    s_memory = NULL;
+}
+static bool stream_memory_alloc(void) {
+    s_memory = calloc(1, sizeof(*s_memory));
+    if (!s_memory) return false;
+    s_memory->audio_stack = malloc(3072);
+    s_memory->send_stack = malloc(4096);
+    s_memory->ring_storage = malloc(RING_BYTES);
+    s_memory->chunk = malloc(CHUNK_ITEM_BYTES);
+    if (!s_memory->audio_stack || !s_memory->send_stack ||
+        !s_memory->ring_storage || !s_memory->chunk) {
+        stream_memory_free();
+        return false;
+    }
+    return true;
+}
+#define s_ring_struct (s_memory->ring)
+#define s_ring_storage (s_memory->ring_storage)
+#define s_chunk (s_memory->chunk)
+#define s_audio_stack (s_memory->audio_stack)
+#define s_ble_stack (s_memory->send_stack)
+#define s_audio_tcb (s_memory->audio_tcb)
+#define s_ble_tcb (s_memory->send_tcb)
+static volatile bool s_quit, s_audio_done, s_send_done;
 static RingbufHandle_t s_ring;
-static uint8_t s_chunk[CHUNK_ITEM_BYTES] __attribute__((aligned(4)));  // [token][PCM];+4 处是 bsp_audio_read 的 DMA 目标
 static SemaphoreHandle_t s_sem;          // 二值:空闲时两 worker 同等的等待信号
 // F1 事件化等待(替代轮询,取消/收尾不再忙等):
 // s_worker_exit_sem —— audio_worker 退出阻塞读时 give(stop/cancel 等它);
@@ -80,16 +121,8 @@ static TickType_t s_fail_log_at = 0;
 
 static TaskHandle_t s_audio_task = NULL;
 static TaskHandle_t s_ble_task = NULL;
-// worker 栈静态化(.bss):编码器(38.5KB)+ NimBLE controller(~44.8KB)后 heap
-// 只剩 ~3KB,动态任务栈分配失败会让 host 任务(4096B)起不来 → 不广播连不上
-// (真机侦查定位)。worker 生命周期与 init 同存活(不随 start/stop 删除),静态
-// 化安全,唯一例外是 init 失败回滚的 vTaskDelete —— 静态任务可删除。
-static StackType_t s_audio_stack[3072 / sizeof(StackType_t)];
-static StaticTask_t s_audio_tcb;
-// ble_worker 4096:ADPCM 编码是定长表查 + 移位,无 alloca、无大局部变量
-// (Opus 时代一路加到 16384 仍崩,根因是堆耗尽而非栈,见任务 design.md §1)。
-static StackType_t s_ble_stack[4096 / sizeof(StackType_t)];
-static StaticTask_t s_ble_tcb;
+// Static-task APIs use the session allocation above. Workers stay resident
+// across PTT turns, then cooperatively stop before that allocation is freed.
 // init 全部成功才置位:任一创建失败时公开 API 空转(见各入口检查),绝不访问
 // NULL ring/sem —— 主流程(模式切换等)不因音频管线初始化失败而崩溃,音频
 // 优雅降级(voice.start 照常,无数据流,审查 P2)。
@@ -180,26 +213,30 @@ esp_err_t audio_streamer_init(void) {
     // 失败态重试:全或无保证失败时无存活 worker、全局句柄未被覆盖(初始
     // NULL 或上次有效残留),重试从干净状态重建。
     if (s_ready) return ESP_OK;
+    if (s_memory) return ESP_ERR_INVALID_STATE;
+    if (!stream_memory_alloc()) return ESP_ERR_NO_MEM;
+    s_quit = s_audio_done = s_send_done = false;
     s_ready = false;   // 先重置:失败路径保持 false,公开 API 空转(审查 P2)
     // 全或无:资源全部创建成功才落全局句柄 —— 失败路径绝不覆盖旧句柄
     // (重复 init 时并发读者/遗留线程仍见有效句柄,不因部分失败暴露 NULL;
     // 真实固件首次 init 失败时全局句柄保持初始 NULL,由 s_ready 空转保护)。
-    // 失败路径同时释放已创建的堆信号量(复核 R1:任一失败点不得泄漏;
-    // ring 为静态存储,无需释放)。
+    // Failure paths release semaphores, the ring and its session allocation.
     RingbufHandle_t ring = xRingbufferCreateStatic(RING_BYTES, RINGBUF_TYPE_NOSPLIT,
                                                    s_ring_storage, &s_ring_struct);
-    if (!ring) return ESP_FAIL;
+    if (!ring) { stream_memory_free(); return ESP_FAIL; }
     SemaphoreHandle_t sem = xSemaphoreCreateBinary();
-    if (!sem) return ESP_FAIL;
+    if (!sem) { vRingbufferDelete(ring); stream_memory_free(); return ESP_FAIL; }
     SemaphoreHandle_t exit_sem = xSemaphoreCreateBinary();
     if (!exit_sem) {
         vSemaphoreDelete(sem);
+        vRingbufferDelete(ring); stream_memory_free();
         return ESP_FAIL;
     }
     SemaphoreHandle_t empty_sem = xSemaphoreCreateBinary();
     if (!empty_sem) {
         vSemaphoreDelete(sem);
         vSemaphoreDelete(exit_sem);
+        vRingbufferDelete(ring); stream_memory_free();
         return ESP_FAIL;
     }
     s_ring = ring;
@@ -224,6 +261,8 @@ esp_err_t audio_streamer_init(void) {
         vSemaphoreDelete(sem);
         vSemaphoreDelete(exit_sem);
         vSemaphoreDelete(empty_sem);
+        vRingbufferDelete(ring); stream_memory_free();
+        s_ring = NULL; s_sem = s_worker_exit_sem = s_ring_empty_sem = NULL;
         return ESP_FAIL;
     }
     s_audio_task = audio_h;   // 静态任务句柄:用于 HWM 日志与回滚删除
@@ -238,6 +277,8 @@ esp_err_t audio_streamer_init(void) {
         vSemaphoreDelete(sem);
         vSemaphoreDelete(exit_sem);
         vSemaphoreDelete(empty_sem);
+        vRingbufferDelete(ring); stream_memory_free();
+        s_ring = NULL; s_sem = s_worker_exit_sem = s_ring_empty_sem = NULL;
         return ESP_FAIL;
     }
     s_ble_task = ble_h;
@@ -245,6 +286,34 @@ esp_err_t audio_streamer_init(void) {
     ESP_LOGI(TAG, "流式管线就绪(静态环 %d B / %d 槽,块 %d B)",
              RING_BYTES, RING_SLOTS, CHUNK_BYTES);
     return ESP_OK;
+}
+
+bool audio_streamer_deinit(void) {
+    if (!s_memory) return true;
+    audio_streamer_cancel();
+    s_ready = false;
+    s_active = false;
+    s_quit = true;
+    xSemaphoreGive(s_sem);
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(2000);
+    while (!s_audio_done || !s_send_done) {
+        if ((int32_t)(deadline - xTaskGetTickCount()) <= 0) {
+            ESP_LOGE(TAG, "Voice pipeline stop timed out; retaining live buffers");
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    // Workers suspend only after leaving codec/network IO and returning items.
+    vTaskDelete(s_audio_task); s_audio_task = NULL;
+    vTaskDelete(s_ble_task); s_ble_task = NULL;
+    vRingbufferDelete(s_ring); s_ring = NULL;
+    vSemaphoreDelete(s_sem); s_sem = NULL;
+    vSemaphoreDelete(s_worker_exit_sem); s_worker_exit_sem = NULL;
+    vSemaphoreDelete(s_ring_empty_sem); s_ring_empty_sem = NULL;
+    stream_memory_free();
+    s_ring_items = 0; s_peak = 0;
+    ESP_LOGI(TAG, "Voice pipeline released: %u bytes", (unsigned)(sizeof(stream_memory_t) + 3072 + 4096 + RING_BYTES + CHUNK_ITEM_BYTES));
+    return true;
 }
 
 esp_err_t audio_streamer_start(void) {
@@ -297,6 +366,13 @@ void audio_streamer_cancel(void) {
 
 bool audio_streamer_active(void) { return s_active; }
 
+void audio_streamer_release_audio(void) {
+    // Only the voice owner calls this after stop/cancel. Never delete a codec
+    // that the worker is still reading when its bounded stop wait timed out.
+    if (!s_active && !s_worker_busy) bsp_audio_deinit();
+    else ESP_LOGW(TAG, "Audio still busy; defer codec release");
+}
+
 uint16_t audio_streamer_peak(void) { return s_peak; }
 
 uint32_t audio_streamer_take_drops(void) {
@@ -321,8 +397,9 @@ void audio_streamer_drain(uint32_t ms) {
 
 static void audio_worker(void *arg) {
     (void)arg;
-    for (;;) {
+    while (!s_quit) {
         xSemaphoreTake(s_sem, portMAX_DELAY);    // 等待 start 信号
+        if (s_quit) break;
         s_worker_busy = true;
         while (s_active) {
             // 本块归属的会话 token(进循环快照):read 阻塞期间若发生 cancel,
@@ -367,14 +444,16 @@ static void audio_worker(void *arg) {
         s_worker_busy = false;
         xSemaphoreGive(s_worker_exit_sem);   // F1: 通知 stop/cancel 等此处的等待者
     }
+    s_audio_done = true;
+    vTaskSuspend(NULL);
 }
 
 static void ble_worker(void *arg) {
     (void)arg;
-    for (;;) {
+    while (!s_quit) {
         size_t len = 0;
         // NOSPLIT:整 item 语义,len 恒等于写入长度(不会像 BYTEBUF 那样短读)
-        void *item = xRingbufferReceive(s_ring, &len, pdMS_TO_TICKS(100));
+        void *item = xRingbufferReceive(s_ring, &len, pdMS_TO_TICKS(50));
         if (!item) {
             continue;   // 环空:自然态
         }
@@ -443,4 +522,6 @@ static void ble_worker(void *arg) {
             }
         }
     }
+    s_send_done = true;
+    vTaskSuspend(NULL);
 }

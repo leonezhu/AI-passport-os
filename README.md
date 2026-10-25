@@ -14,6 +14,12 @@ ESP32-C3 / 8 MB AI Passport hardware revision before flashing. A full-image
 flash may replace the device's local Wi-Fi and application settings; back up
 anything you need first.
 
+An `-app.bin` image is written at `0x10000` only after verifying an identical
+partition layout for an existing Passport OS installation. Do not erase the
+whole flash first. A `-full.bin` image at `0x0` includes blank NVS/PHY bytes and
+overwrites Wi-Fi, settings and image indexes in that region; it is not a
+data-preserving upgrade.
+
 The release workflow builds with ESP-IDF 5.5.3, verifies the merged image and
 protected partition layout, then publishes that exact binary. Build success is
 not a substitute for testing audio, buttons, battery reporting and networking
@@ -39,6 +45,20 @@ source <ESP-IDF-5.5.3>/export.sh
 
 The firmware target is `esp32c3`. The merged image is written to
 `build/FoloToy-AI-Passport-full.bin`.
+
+For a local candidate, `bash build.sh release` builds in `build-public`. Both
+this path and CI verify that public mode is enabled and proxy defaults are
+empty. After validating that version, create a local candidate package:
+
+```bash
+python3 tools/package_firmware.py --date YYYY-MM-DD --verification /path/to/verification-public.json
+```
+
+Use public-safe verification JSON matching the firmware version, never device
+logs or configuration exports. Packaging does not publish a GitHub Release.
+The source ZIP and per-file hashes identify the exact working-tree snapshot;
+a dirty checkout's old HEAD alone does not identify the candidate. A release
+tag should point to a corresponding finalized commit.
 
 ## Compatibility and risk
 

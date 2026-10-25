@@ -11,11 +11,16 @@ Wi-Fi 配网、小智 AI、收音机、游戏，以及 Windows 电脑端硬件�
 `0x0`。烧录前必须确认设备是相同硬件版本的 ESP32-C3 / 8 MB AI Passport。
 完整镜像可能覆盖设备本地的 Wi-Fi 与应用配置，需要的内容请先备份。
 
+带有 `-app.bin` 的应用镜像写入 `0x10000`，仅适用于已经确认分区布局相同的
+本项目固件升级；设备型号相同不等于分区布局相同。不要先擦除整片 Flash。
+`-full.bin` 写入 `0x0`，包含空白 NVS/PHY 区域，会覆盖该范围内的 Wi-Fi、
+设置和图片索引，不能当作保留资料的普通升级。
+
 Release 工作流固定使用 ESP-IDF 5.5.3，完成编译、合并镜像校验和受保护分区布局
 校验后，发布同一个二进制文件。编译通过不等于真机上的音频、按键、电池和网络
 已经全部验收。
 
-Windows 的“硬件麦克风 + 右 Shift/Enter”电脑端程序见
+Windows 的“硬件麦克风 + 可配置语音快捷键”电脑端程序见
 [folo-ai-passport-voice](https://github.com/manchunx7-bit/folo-ai-passport-voice)。
 
 ## 隐私与隔离
@@ -35,6 +40,18 @@ source <ESP-IDF-5.5.3>/export.sh
 目标芯片为 `esp32c3`，完整镜像输出到
 `build/FoloToy-AI-Passport-full.bin`。
 
+本机候选使用 `bash build.sh release` 构建至 `build-public`。公开构建会检查
+`PASSPORT_PUBLIC_RELEASE=ON` 与空代理默认值；CI 使用相同的校验条件。
+通过对应版本验收后，可在本机生成带源码快照、manifest 和 SHA256 的候选包：
+
+```bash
+python3 tools/package_firmware.py --date YYYY-MM-DD --verification /path/to/verification-public.json
+```
+
+验收 JSON 必须对应当前固件版本且可公开，不得使用设备日志或配置导出。
+打包不会创建 GitHub Release。源码 ZIP 和逐文件校验值固定候选的实际内容；
+工作区有未提交修改时，旧 Git HEAD 不能代表该候选，正式标签应对应整理后的提交。
+
 ## 兼容性与风险
 
 - 仅支持硬件版本相同的 FoloToy AI Passport：ESP32-C3、8 MB Flash。
@@ -42,4 +59,3 @@ source <ESP-IDF-5.5.3>/export.sh
   不能直接刷入。
 - 保留一份已知可用的恢复固件；烧录中断、端口选错或目标型号错误可能需要恢复。
 - 社区用户必须使用自己的 Wi-Fi 和服务凭据。
-

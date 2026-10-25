@@ -35,8 +35,7 @@ static void           *s_user;
 static adc_oneshot_unit_handle_t s_adc;
 static adc_cali_handle_t         s_cali;
 
-// 电压读取的衰减档必须与 button 组件内部的 ADC_BUTTON_ATTEN 一致 —— 通道只被配置一次
-// (由组件在 iot_button_new_adc_device() 里下发),两边对不上会让读数与按键阈值错位。
+// BSP 轮询与 button 组件共用衰减档,校准也必须一致,否则读数会与按键阈值错位。
 // managed_components/espressif__button/button_adc.c:26 在 C3 上取 ADC_ATTEN_DB_6+1。
 #define BSP_BTN_ATTEN  ADC_ATTEN_DB_12       // 量程约 0~3100mV,覆盖松开态
 
@@ -62,6 +61,20 @@ esp_err_t bsp_button_init(bsp_btn_cb_t cb, void *user) {
     esp_err_t ae = adc_oneshot_new_unit(&ucfg, &s_adc);
     if (ae != ESP_OK) {
         ESP_LOGE(TAG, "ADC unit 创建失败 (%s)", esp_err_to_name(ae));
+        s_adc = NULL;
+        return ae;
+    }
+
+    // 主程序用无回调的轮询模式,不会调用 iot_button_new_adc_device。
+    // 因此通道必须由 BSP 配置,不能依赖 button 组件的创建流程。
+    const adc_oneshot_chan_cfg_t channel_cfg = {
+        .atten = BSP_BTN_ATTEN,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    ae = adc_oneshot_config_channel(s_adc, BSP_BTN_ADC_CHANNEL, &channel_cfg);
+    if (ae != ESP_OK) {
+        ESP_LOGE(TAG, "ADC 通道配置失败 (%s)", esp_err_to_name(ae));
+        adc_oneshot_del_unit(s_adc);
         s_adc = NULL;
         return ae;
     }
@@ -94,17 +107,23 @@ esp_err_t bsp_button_init(bsp_btn_cb_t cb, void *user) {
         }
     }
 
-    // 通道已由组件配置好,这里只补一份校准句柄给 bsp_button_read_mv() 用。
-    // 失败不致命:按键照常工作,只是读不出电压(标定分压电阻时才需要)。
+    // 通道已配置好,这里创建与其衰减档一致的校准句柄给 bsp_button_read_mv() 用。
+    // 轮询模式的按键判定依赖校准电压,失败必须报错;回调模式可用组件自己的校准。
     const adc_cali_curve_fitting_config_t cal = {
         .unit_id  = BSP_BTN_ADC_UNIT,
         .chan     = BSP_BTN_ADC_CHANNEL,
         .atten    = BSP_BTN_ATTEN,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
-    if (adc_cali_create_scheme_curve_fitting(&cal, &s_cali) != ESP_OK) {
-        ESP_LOGW(TAG, "ADC 校准创建失败,Button 页将无法显示电压");
+    ae = adc_cali_create_scheme_curve_fitting(&cal, &s_cali);
+    if (ae != ESP_OK) {
+        ESP_LOGW(TAG, "ADC 校准创建失败");
         s_cali = NULL;
+        if (!cb) {
+            adc_oneshot_del_unit(s_adc);
+            s_adc = NULL;
+            return ae;
+        }
     }
 
     ESP_LOGI(TAG, "按键就绪:ADC1_CH%d 三键分压", BSP_BTN_ADC_CHANNEL);
