@@ -193,17 +193,12 @@ static esp_err_t send_muse_config(httpd_req_t *req) {
     passport_muse_config_status(&token_set, &paired);
     char proxy_host[16]; uint16_t proxy_port = 0;
     passport_muse_proxy_config(proxy_host, sizeof(proxy_host), &proxy_port);
-    char hotspot_ssid[33]; uint16_t hotspot_port = 0;
-    passport_muse_hotspot_proxy_config(hotspot_ssid, sizeof(hotspot_ssid), &hotspot_port);
-    // cJSON escapes the SSID, which may contain quotes or backslashes.
     cJSON *obj = cJSON_CreateObject();
     cJSON_AddBoolToObject(obj, "ok", true);
     cJSON_AddBoolToObject(obj, "token_set", token_set);
     cJSON_AddBoolToObject(obj, "paired", paired);
     cJSON_AddStringToObject(obj, "proxy_host", proxy_host);
     cJSON_AddNumberToObject(obj, "proxy_port", proxy_port);
-    cJSON_AddStringToObject(obj, "hotspot_ssid", hotspot_ssid);
-    cJSON_AddNumberToObject(obj, "hotspot_port", hotspot_port);
     char *json = cJSON_PrintUnformatted(obj);
     cJSON_Delete(obj);
     if (!json) return send_json(req, 500, "{\"error\":\"no_memory\"}");
@@ -234,18 +229,10 @@ static esp_err_t handler_muse_post(httpd_req_t *req) {
         proxy_port->valuedouble >= 0 && proxy_port->valuedouble <= 65535 &&
         proxy_port->valuedouble == proxy_port->valueint &&
         passport_muse_proxy_valid(proxy_host->valuestring, (uint16_t)proxy_port->valueint));
-    const cJSON *hotspot_ssid = cJSON_GetObjectItemCaseSensitive(obj, "hotspot_ssid");
-    const cJSON *hotspot_port = cJSON_GetObjectItemCaseSensitive(obj, "hotspot_port");
-    bool hotspot_valid = !hotspot_ssid || (cJSON_IsString(hotspot_ssid) && cJSON_IsNumber(hotspot_port) &&
-        hotspot_port->valuedouble >= 0 && hotspot_port->valuedouble <= 65535 &&
-        hotspot_port->valuedouble == hotspot_port->valueint &&
-        passport_muse_hotspot_proxy_valid(hotspot_ssid->valuestring, (uint16_t)hotspot_port->valueint));
-    esp_err_t err = proxy_valid && hotspot_valid ? ESP_OK : ESP_ERR_INVALID_ARG;
+    esp_err_t err = proxy_valid ? ESP_OK : ESP_ERR_INVALID_ARG;
     if (err == ESP_OK && token) err = cJSON_IsString(token) ? passport_muse_set_sdk_token(token->valuestring) : ESP_ERR_INVALID_ARG;
     if (err == ESP_OK && proxy_host) err = passport_muse_set_proxy(proxy_host->valuestring, (uint16_t)proxy_port->valueint);
-    if (err == ESP_OK && hotspot_ssid)
-        err = passport_muse_set_hotspot_proxy(hotspot_ssid->valuestring, (uint16_t)hotspot_port->valueint);
-    if (!token && !proxy_host && !hotspot_ssid) err = ESP_ERR_INVALID_ARG;
+    if (!token && !proxy_host) err = ESP_ERR_INVALID_ARG;
     cJSON_Delete(obj);
     std::memset(body, 0, sizeof(body));
     if (err == ESP_OK) return send_muse_config(req);

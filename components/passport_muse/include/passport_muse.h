@@ -24,12 +24,7 @@ void passport_muse_config_status(bool *token_set, bool *paired);
 esp_err_t passport_muse_set_proxy(const char *host, uint16_t port);
 bool passport_muse_proxy_valid(const char *host, uint16_t port);
 void passport_muse_proxy_config(char *host, size_t cap, uint16_t *port);
-// On the named phone hotspot the phone (Wi-Fi gateway) at this port is the
-// proxy instead. "" with port 0 turns the rule off.
-esp_err_t passport_muse_set_hotspot_proxy(const char *ssid, uint16_t port);
-bool passport_muse_hotspot_proxy_valid(const char *ssid, uint16_t port);
-void passport_muse_hotspot_proxy_config(char *ssid, size_t cap, uint16_t *port);
-// Current network's selected route: 0 direct, 1 computer, 2 phone hotspot.
+// Current route: 0 direct, 1 computer proxy.
 int passport_muse_proxy_route_info(char *host, size_t cap, uint16_t *port);
 esp_err_t passport_muse_start(void);
 bool passport_muse_stop(void);

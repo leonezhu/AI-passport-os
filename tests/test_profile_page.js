@@ -21,7 +21,7 @@ class Image {constructor(){this.naturalWidth=240;this.naturalHeight=320}set src(
 let state='idle',saved=false,failShare=false,denyFinish=false,emptyScan=true,failScan=false;
 let connectError='';
 let avatarError='',avatarDeviceCode='ESP_FAIL';
-let museTokenSet=false,musePaired=false,museProxyHost='',museProxyPort=0,museHotspotSsid='',museHotspotPort=0,failMuseSave=false,failMuseLoad=false,museGate=null;
+let museTokenSet=false,musePaired=false,museProxyHost='',museProxyPort=0,failMuseSave=false,failMuseLoad=false,museGate=null;
 let failCities=false,cityGate=null;let savedProfile={name:'测试',signature:'已有签名',address:'原地址',city:'自定义城市',lat:'22.3',lon:'113.6',avatar:true,share_image:true};let gallery=[{slot:0,bytes:12000}],blobBytes=20000,qualityAttempts=[];
 const phoneWindow={__T:314159,scrollTo(){},addEventListener(){},isSecureContext:false,crypto:require('node:crypto').webcrypto,location:{origin:'http://192.168.4.1'}};
 const phoneNavigator={};
@@ -29,7 +29,7 @@ class TestURL extends URL{static createObjectURL(){return 'blob:fixture'}static 
 const context=vm.createContext({document:{getElementById:get,createElement:()=>new Element()},window:phoneWindow,navigator:phoneNavigator,Option:class{constructor(text,value){this.text=text;this.value=value;this.dataset={}}},Image,TextEncoder,Uint8Array,Uint8ClampedArray,Blob,AbortController,URL:TestURL,URLSearchParams,setTimeout(fn,ms){const id=nextTimer++;timers.set(id,{fn,ms});return id},clearTimeout:id=>timers.delete(id),fetch:async(url,options)=>{
  requests.push({url,options});let result={},ok=true;
  if(url.startsWith('/api/cities')){if(cityGate)await cityGate;if(failCities)throw new Error('offline');result=cityCatalog;}
- if(url.startsWith('/api/muse')){if(options.method==='POST'){if(failMuseSave){ok=false;result={error:'muse_config'}}else{const data=JSON.parse(options.body);if(data.sdk_token){museTokenSet=true;musePaired=false}if('proxy_host' in data){museProxyHost=data.proxy_host;museProxyPort=data.proxy_port}if('hotspot_ssid' in data){museHotspotSsid=data.hotspot_ssid;museHotspotPort=data.hotspot_port}result={ok:true,token_set:museTokenSet,paired:musePaired,proxy_host:museProxyHost,proxy_port:museProxyPort,hotspot_ssid:museHotspotSsid,hotspot_port:museHotspotPort}}}else{if(museGate)await museGate;if(failMuseLoad)throw new Error('offline');result={token_set:museTokenSet,paired:musePaired,proxy_host:museProxyHost,proxy_port:museProxyPort,hotspot_ssid:museHotspotSsid,hotspot_port:museHotspotPort}}}
+ if(url.startsWith('/api/muse')){if(options.method==='POST'){if(failMuseSave){ok=false;result={error:'muse_config'}}else{const data=JSON.parse(options.body);if(data.sdk_token){museTokenSet=true;musePaired=false}if('proxy_host' in data){museProxyHost=data.proxy_host;museProxyPort=data.proxy_port}result={ok:true,token_set:museTokenSet,paired:musePaired,proxy_host:museProxyHost,proxy_port:museProxyPort}}}else{if(museGate)await museGate;if(failMuseLoad)throw new Error('offline');result={token_set:museTokenSet,paired:musePaired,proxy_host:museProxyHost,proxy_port:museProxyPort}}}
  if(url.startsWith('/api/profile')&&!options.method)result=savedProfile;
  if(url.startsWith('/api/avatar')&&options.method==='POST'&&avatarError){ok=false;result={error:avatarError,code:avatarDeviceCode};}
  if(url.startsWith('/api/setup'))result={state,saved_network:saved,saved_networks:saved?['Absent Wi-Fi','Test Wi-Fi']:[],ssid:'Test Wi-Fi'};
@@ -149,22 +149,6 @@ const posts=()=>requests.filter(r=>r.options.method==='POST');
  get('museProxyHost').value='';await get('saveMuse').onclick();
  assert.deepEqual(JSON.parse(posts().at(-1).options.body),{proxy_host:'',proxy_port:0});
  assert.equal(musePaired,true,'proxy-only update does not replace account authorization');
- // Phone hotspot rule: validated on the phone, posted only when it changes, and restored on reload.
- let hotspotPosts=posts().length;
- get('museHotspotSsid').value='我的 iPhone';get('museHotspotSsid').oninput();get('museHotspotPort').value='0';await get('saveMuse').onclick();
- get('museHotspotSsid').value='一二三四五六七八九十一';get('museHotspotPort').value='7890';await get('saveMuse').onclick();
- assert.equal(posts().length,hotspotPosts,'invalid hotspot name or port is not posted');
- get('museHotspotSsid').value='我的 iPhone';await get('saveMuse').onclick();
- assert.deepEqual(JSON.parse(posts().at(-1).options.body),{proxy_host:'',proxy_port:0,hotspot_ssid:'我的 iPhone',hotspot_port:7890});
- assert.match(get('museSaved').textContent,/手机热点 我的 iPhone 端口 7890/);
- get('museProxyHost').value='192.168.1.20';get('museProxyPort').value='7897';await get('saveMuse').onclick();
- assert.deepEqual(JSON.parse(posts().at(-1).options.body),{proxy_host:'192.168.1.20',proxy_port:7897},'unchanged hotspot rule is not rewritten');
- vm.runInContext('museLoaded=false;museProxyEdited=false',context);
- get('museHotspotSsid').value='';get('museHotspotPort').value='';await context.loadMuse();
- assert.equal(get('museHotspotSsid').value,'我的 iPhone');assert.equal(get('museHotspotPort').value,7890);
- get('museHotspotSsid').value='';get('museHotspotSsid').oninput();await get('saveMuse').onclick();
- assert.deepEqual(JSON.parse(posts().at(-1).options.body),{proxy_host:'192.168.1.20',proxy_port:7897,hotspot_ssid:'',hotspot_port:0});
- assert.doesNotMatch(get('museSaved').textContent,/手机热点/);
  get('museProxyHost').value='';await get('saveMuse').onclick();
  // Primary completion saves valid pending Muse inputs, and never closes the
  // setup AP when those inputs are invalid or cannot be persisted.

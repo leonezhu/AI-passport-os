@@ -21,15 +21,8 @@ void muse_proxy_cancel(void);
 void muse_proxy_get_config(char *host, size_t cap, uint16_t *port);
 bool muse_proxy_valid_config(const char *host, uint16_t port);
 bool muse_proxy_save_config(const char *host, uint16_t port);
-/* Phone hotspot rule: on this SSID the gateway at port is the proxy. */
-void muse_hotspot_get_config(char *ssid, size_t cap, uint16_t *port);
-bool muse_hotspot_save_config(const char *ssid, uint16_t port);
-/* True when the last muse_proxy_load_config picked the phone hotspot. */
-bool muse_proxy_via_hotspot(void);
+/* Current route: 0 for direct, 1 for the configured computer proxy. */
 int muse_proxy_route_info(char *host, size_t cap, uint16_t *port);
-/* True when the device has moved to a network whose proxy differs from the
- * one the current session was opened with (e.g. home Wi-Fi -> hotspot). */
-bool muse_proxy_route_stale(void);
 
 /* On success *out is a connected TLS session. On failure *out is NULL and
  * any socket opened here is closed. */

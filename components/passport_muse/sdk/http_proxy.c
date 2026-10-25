@@ -31,14 +31,11 @@
 #include "config_store.h"
 #include "muse_proxy_defaults.h"
 #include "proxy_route.h"
-#include "esp_netif.h"
-#include "esp_wifi.h"
 
 static const char *TAG = "link.proxy";
 static char s_proxy_host[MUSE_PROXY_HOST_MAX];
 static uint16_t s_proxy_port;
 static atomic_bool s_proxy_cancelled;
-static bool s_proxy_via_hotspot;
 
 bool muse_proxy_valid_config(const char *host, uint16_t port) {
     if (!host) return false;
@@ -73,78 +70,15 @@ bool muse_proxy_save_config(const char *host, uint16_t port) {
     return config_set_str("http_proxy", value);
 }
 
-void muse_hotspot_get_config(char *ssid, size_t cap, uint16_t *port) {
-    char stored[48];
-    if (!config_get_str("hotspot_proxy", stored, sizeof(stored)) || !muse_hotspot_parse(stored, ssid, cap, port)) {
-        if (cap) ssid[0] = 0;
-        if (port) *port = 0;
-    }
-}
-
-bool muse_hotspot_save_config(const char *ssid, uint16_t port) {
-    char value[48];
-    return muse_hotspot_format(value, sizeof(value), ssid, port) && config_set_str("hotspot_proxy", value);
-}
-
-/* Hotspot rule and the network it was last evaluated on, cached so the
- * worker's once-a-second staleness check never touches NVS. */
-static char s_hotspot_ssid[MUSE_HOTSPOT_SSID_MAX + 1];
-static uint16_t s_hotspot_port;
-static char s_route_ssid[MUSE_HOTSPOT_SSID_MAX + 1], s_route_gateway[MUSE_PROXY_HOST_MAX];
-
-static void current_network(char *ssid, char *gateway) {
-    ssid[0] = gateway[0] = 0;
-    wifi_ap_record_t ap = {0};
-    if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) return;
-    snprintf(ssid, MUSE_HOTSPOT_SSID_MAX + 1, "%s", (const char *)ap.ssid);
-    esp_netif_ip_info_t ip = {0};
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (netif && esp_netif_get_ip_info(netif, &ip) == ESP_OK) esp_ip4addr_ntoa(&ip.gw, gateway, MUSE_PROXY_HOST_MAX);
-}
-
 void muse_proxy_load_config(void) {
     atomic_store(&s_proxy_cancelled, false);
-    char home[MUSE_PROXY_HOST_MAX];
-    uint16_t home_port = 0;
-    muse_proxy_get_config(home, sizeof(home), &home_port);
-    muse_hotspot_get_config(s_hotspot_ssid, sizeof(s_hotspot_ssid), &s_hotspot_port);
-    current_network(s_route_ssid, s_route_gateway);
-    s_proxy_via_hotspot = muse_proxy_route(s_route_ssid, s_route_gateway, s_hotspot_ssid, s_hotspot_port,
-                                           home, home_port, s_proxy_host, &s_proxy_port);
-    if (s_proxy_via_hotspot) ESP_LOGI(TAG, "phone hotspot proxy %s:%u", s_proxy_host, s_proxy_port);
+    muse_proxy_get_config(s_proxy_host, sizeof(s_proxy_host), &s_proxy_port);
 }
 int muse_proxy_route_info(char *host, size_t cap, uint16_t *port) {
-    char ssid[33], gateway[MUSE_PROXY_HOST_MAX], home[MUSE_PROXY_HOST_MAX];
-    char hotspot[33], selected[MUSE_PROXY_HOST_MAX];
-    uint16_t home_port = 0, hotspot_port = 0, selected_port = 0;
-    current_network(ssid, gateway);
-    muse_proxy_get_config(home, sizeof(home), &home_port);
-    muse_hotspot_get_config(hotspot, sizeof(hotspot), &hotspot_port);
-    const bool phone = muse_proxy_route(ssid, gateway, hotspot, hotspot_port, home, home_port, selected, &selected_port);
-    if (host && cap) snprintf(host, cap, "%s", selected);
-    if (port) *port = selected_port;
-    return selected_port && selected[0] ? (phone ? 2 : 1) : 0;
+    if (host && cap) snprintf(host, cap, "%s", s_proxy_host);
+    if (port) *port = s_proxy_port;
+    return s_proxy_port && s_proxy_host[0] ? 1 : 0;
 }
-bool muse_proxy_route_stale(void) {
-    if (!s_hotspot_ssid[0]) return false;
-    char ssid[MUSE_HOTSPOT_SSID_MAX + 1], gateway[MUSE_PROXY_HOST_MAX];
-    current_network(ssid, gateway);
-    if (!ssid[0] || !gateway[0]) return false;
-    if (!strcmp(ssid, s_route_ssid) && !strcmp(gateway, s_route_gateway)) return false;
-    char home[MUSE_PROXY_HOST_MAX], host[MUSE_PROXY_HOST_MAX];
-    uint16_t home_port = 0, port = 0;
-    muse_proxy_get_config(home, sizeof(home), &home_port);
-    muse_proxy_route(ssid, gateway, s_hotspot_ssid, s_hotspot_port, home, home_port, host, &port);
-    if (!strcmp(host, s_proxy_host) && port == s_proxy_port) {
-        // Same proxy on the new network: remember it and keep the session.
-        memcpy(s_route_ssid, ssid, sizeof(s_route_ssid));
-        memcpy(s_route_gateway, gateway, sizeof(s_route_gateway));
-        return false;
-    }
-    ESP_LOGI(TAG, "network changed, proxy %s:%u -> %s:%u", s_proxy_host, s_proxy_port, host, port);
-    return true;
-}
-bool muse_proxy_via_hotspot(void) { return s_proxy_via_hotspot; }
 void muse_proxy_cancel(void) { atomic_store(&s_proxy_cancelled, true); }
 bool muse_proxy_enabled(void) { return s_proxy_host[0] && s_proxy_port; }
 

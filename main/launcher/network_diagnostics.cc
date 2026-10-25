@@ -37,7 +37,7 @@ void refresh() {
     char text[512];
     std::snprintf(text, sizeof(text), "RSSI %d dBm\nIP %s\n%s\nMuse %s\n%s:%u\n校时 %s\nUTC%c%02d:%02d\n天气 %s\n电量 %d%%", wifi.GetRssi(),
         wifi.IsConnected() ? wifi.GetIpAddress().c_str() : "--", internet[static_cast<int>(wifi.GetInternetStatus())],
-        route == 2 ? "手机热点" : route == 1 ? "电脑代理" : "直连", route ? proxy : "--", port,
+        route == 1 ? "电脑代理" : "直连", route ? proxy : "--", port,
         synced, tz < 0 ? '-' : '+', std::abs(tz) / 60, std::abs(tz) % 60, age, bsp_battery_soc());
     ui_pixel_label_set_text(s_info, text);
 }

@@ -311,7 +311,6 @@ bool connect_account(bool refresh_first) {
     config_get_str("api_url_v2", endpoint, sizeof(endpoint));
     config_get_str("noise_host", host, sizeof(host));
     muse_proxy_load_config();
-    if (muse_proxy_via_hotspot()) view(PASSPORT_MUSE_CONNECTING, "正在经手机热点连接 Muse");
     // Fail at the actual DNS boundary before allocating credential/TLS buffers.
     if ((!muse_proxy_enabled() && !resolve_api(endpoint)) || s_exit) return false;
     if (muse_proxy_enabled()) log_network();
@@ -351,8 +350,7 @@ bool connect_account(bool refresh_first) {
     if (!ok && !s_exit) view(PASSPORT_MUSE_ERROR, storage_failed ? "授权未保存，请确定重试" :
         refresh_rejected ? "账号授权失效，请重新配对" :
         count == VM_API_ERR_AUTH ? "云端暂未接受授权\n确定重试" :
-        count == 0 ? "账号没有可用的 Muse，请查看手机" :
-        muse_proxy_via_hotspot() ? "手机代理未连通\n检查代理 App 的局域网端口" : "云端未连通\n稍后自动重连");
+        count == 0 ? "账号没有可用的 Muse，请查看手机" : "云端未连通\n稍后自动重连");
     return ok;
 }
 // Full teardown and fresh account connect; also re-reads the proxy route.
@@ -365,9 +363,7 @@ void reconnect() {
 void worker(void *) {
     bool recording = false, previous_press = false, capture_wifi = false;
     int64_t began = 0;
-    // Outdoors the device hops between home Wi-Fi, a phone hotspot and dead
-    // zones. Recover from network errors without a key press, and reconnect
-    // when the new network needs a different proxy.
+    // Recover from network errors without a key press while Wi-Fi comes back.
     bool was_online = true;
     int64_t net_check_at = 0, retry_at = 0, retry_delay = 10000000;
     if (!s_paired) setup_ble();
@@ -472,9 +468,6 @@ void worker(void *) {
                     retry_at = esp_timer_get_time() + retry_delay;
                     if (retry_delay < 60000000) retry_delay *= 2;
                 }
-            } else if (online && muse_proxy_route_stale()) {
-                view(PASSPORT_MUSE_CONNECTING, "网络已切换，正在重连");
-                reconnect();
             }
             was_online = online;
             if (current.stage == PASSPORT_MUSE_READY) retry_delay = 10000000;
@@ -597,16 +590,6 @@ extern "C" bool passport_muse_proxy_valid(const char *host, uint16_t port) { ret
 extern "C" int passport_muse_proxy_route_info(char *host, size_t cap, uint16_t *port) { return muse_proxy_route_info(host, cap, port); }
 extern "C" void passport_muse_proxy_config(char *host, size_t cap, uint16_t *port) {
     muse_proxy_get_config(host, cap, port);
-}
-extern "C" esp_err_t passport_muse_set_hotspot_proxy(const char *ssid, uint16_t port) {
-    if (s_active.exchange(true)) return ESP_ERR_INVALID_STATE;
-    struct ReleaseConfigGate { ~ReleaseConfigGate() { s_active = false; } } release;
-    if (!muse_hotspot_valid(ssid, port)) return ESP_ERR_INVALID_ARG;
-    return muse_hotspot_save_config(ssid, port) ? ESP_OK : ESP_FAIL;
-}
-extern "C" bool passport_muse_hotspot_proxy_valid(const char *ssid, uint16_t port) { return muse_hotspot_valid(ssid, port); }
-extern "C" void passport_muse_hotspot_proxy_config(char *ssid, size_t cap, uint16_t *port) {
-    muse_hotspot_get_config(ssid, cap, port);
 }
 extern "C" esp_err_t passport_muse_start(void) {
     if (s_active.exchange(true)) return ESP_ERR_INVALID_STATE;

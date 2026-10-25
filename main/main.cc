@@ -398,12 +398,6 @@ extern "C" void app_main(void) {
     wifi_cfg.ssid_prefix = "Passport-WiFi";
     wifi_cfg.language = "zh-CN";
     WifiManager::GetInstance().Initialize(wifi_cfg);
-    WifiManager::GetInstance().SetPreferredSsid([]() {
-        char ssid[33]; uint16_t port = 0;
-        passport_muse_hotspot_proxy_config(ssid, sizeof(ssid), &port);
-        return port ? std::string(ssid) : std::string{};
-    });
-
     // 待机省电默认档:MAX modem sleep(首页/桌面/设置等非流媒体前台)。
     // 进 radio/voice/xiaozhi 时由 app_registry 切回 BALANCED,上传模式由首页恢复。
     WifiManager::GetInstance().SetPowerSaveLevel(WifiPowerSaveLevel::LOW_POWER);
