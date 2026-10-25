@@ -35,6 +35,8 @@
 需要 ESP-IDF 5.5.3：
 
 ```bash
+git clone https://github.com/leonezhu/AI-passport-os.git
+cd AI-passport-os
 IDF_DIR="$HOME/esp/esp-idf" bash build.sh release
 ```
 
