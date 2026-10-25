@@ -25,6 +25,20 @@
 - **声音跳一跳**（声控跳跃游戏）
 - **俄罗斯方块**
 
+## 来源与致谢
+
+这个固件站在以下项目和作者的肩膀上，在此一一记录：
+
+| 来源 | 贡献 | 链接 |
+| --- | --- | --- |
+| **FoloToy** | AI Passport 硬件与官方固件、Web Flasher 刷机工具 | [ai-passport.folotoy.cn](https://ai-passport.folotoy.cn/) |
+| **manchunx7-bit** | Passport OS 上游社区固件（本 fork 的直接基础）：整机框架、启动器、首页/收音机/随身语音/小智/秒表/番茄钟等全部保留功能的实现 | [manchunx7-bit/passport-os](https://github.com/manchunx7-bit/passport-os) |
+| **manchunx7-bit** | AI 随身语音电脑端程序（本项目 Mac Intel 适配 PR 已提交上游） | [manchunx7-bit/folo-ai-passport-voice](https://github.com/manchunx7-bit/folo-ai-passport-voice) |
+| **小智 AI (xiaozhi)** | 「小智 AI」语音对话应用的服务与生态 | [xiaozhi.me](https://xiaozhi.me/) |
+| **leo0183** | AI Passport 随身城市电台思路与实现参考（收音机应用相关） | [leo0183/leo-radio](https://github.com/leo0183/leo-radio) |
+
+ 详细来源记录见 [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md)，许可信息见 [LICENSE](LICENSE)（MIT，含各方版权行）。
+
 ## 六款应用，装进口袋
 
 | 应用 | 可以做什么 | 使用条件 |
@@ -97,6 +111,6 @@ IDF_DIR="$HOME/esp/esp-idf" bash build.sh release
 
 ## 许可与致谢
 
-项目主体沿用上游 [MIT 许可证](LICENSE)。感谢 [manchunx7-bit](https://github.com/manchunx7-bit) 的优秀上游项目、FoloToy 的硬件，以及所有社区贡献者。
+项目主体沿用上游 [MIT 许可证](LICENSE)，各方版权行已在 LICENSE 中记录。感谢 FoloToy 的硬件、[manchunx7-bit](https://github.com/manchunx7-bit) 的优秀上游项目、小智 AI 与 leo0183 的电台工作，以及所有社区贡献者。完整致谢见上方「来源与致谢」与 [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md)。
 
 **从一个自己想用的小玩意开始，接下来，把它改成自己的样子。**
