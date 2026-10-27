@@ -19,6 +19,7 @@ typedef enum {
     APP_ID_HOME,
     APP_ID_STOPWATCH,
     APP_ID_POMODORO,
+    APP_ID_PANDA,
     APP_ID_COUNT
 } passport_app_id_t;
 

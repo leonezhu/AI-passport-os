@@ -61,6 +61,8 @@ idf_component_register(
         "apps/stopwatch/app_stopwatch.cc"
         "apps/pomodoro/pomodoro_core.c"
         "apps/pomodoro/app_pomodoro.cc"
+        "apps/panda_climb/panda_core.c"
+        "apps/panda_climb/app_panda.cc"
         "apps/pomodoro/pomodoro_font_20.c"
         "apps/pomodoro/pomodoro_digits_48.c"
     INCLUDE_DIRS
