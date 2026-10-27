@@ -52,41 +52,54 @@ void draw_game(lv_event_t *e) {
         }
     }
 
-    // 实体：屏幕 y = 240 - (世界y - scroll_y) …世界越大越靠上
+    // 实体：6 槽位定位（贴竿某一面），尺寸放大到 ~24px 清晰可见
     for (uint16_t i = 0; i < s_game.entity_count; ++i) {
         const panda_entity_t *en = &s_game.entities[i];
-        int sy = 240 - 22 - (en->y - (int)s_game.scroll_y) - 8;
+        int sy = 240 - 22 - (en->y - (int)s_game.scroll_y) - 11;
         if (sy < 26 || sy > 240 - 24) continue;
-        int ex = 40 + en->lane * 80 - 8;
+        uint8_t st_lane = panda_slot_lane(en->lane);
+        int8_t side = panda_slot_side(en->lane);
+        int pole_x = 40 + st_lane * 80;              // 竿中心 x
+        int ex = pole_x + side * 10 - (side > 0 ? 0 : 24);  // 贴面：左面在竿左, 右面在竿右
         switch (en->kind) {
-            case PANDA_ENTITY_SNAKE:  // 蛇：三节绿波
-                box(ex, sy + 4, 16, 4, C_SNAKE);
-                box(ex + 10, sy + 1, 6, 6, C_SNAKE);
-                box(ex + 13, sy + 3, 1, 1, C_PANDA_B);
+            case PANDA_ENTITY_SNAKE:  // 蛇（贴竿大蛇：蛇身波+抬头+信子）
+                box(ex, sy + 6, 24, 6, C_SNAKE);
+                box(ex + 4, sy + 2, 8, 5, C_SNAKE);
+                box(ex + 14, sy, 10, 8, C_SNAKE);          // 大头
+                box(ex + 20, sy + 2, 3, 2, C_PANDA_B);      // 眼
+                box(ex + 23, sy + 4, 3, 2, C_BUG);          // 信子
+                box(ex + 2, sy + 12, 4, 3, C_BAMBOO_D);     // 缠竿尾
                 break;
-            case PANDA_ENTITY_BUG:    // 甲虫：暗红壳+触角
-                box(ex + 4, sy + 3, 8, 7, C_BUG);
-                box(ex + 6, sy + 1, 4, 2, C_PANDA_B);
-                box(ex + 3, sy + 5, 1, 3, C_PANDA_B);
-                box(ex + 12, sy + 5, 1, 3, C_PANDA_B);
+            case PANDA_ENTITY_BUG:    // 甲虫（大壳+鞘翅纹+六足）
+                box(ex + 4, sy + 4, 16, 13, C_BUG);
+                box(ex + 8, sy + 1, 8, 4, C_PANDA_B);       // 头
+                box(ex + 2, sy + 6, 3, 2, C_PANDA_B);       // 触角
+                box(ex + 19, sy + 6, 3, 2, C_PANDA_B);
+                box(ex + 11, sy + 6, 2, 11, C_PANDA_B);     // 鞘翅中线
+                box(ex, sy + 8, 4, 2, C_PANDA_B);           // 足
+                box(ex + 20, sy + 8, 4, 2, C_PANDA_B);
+                box(ex + 2, sy + 14, 4, 2, C_PANDA_B);
+                box(ex + 18, sy + 14, 4, 2, C_PANDA_B);
                 break;
-            case PANDA_ENTITY_SHOOT:  // 竹笋：三角塔
-                box(ex + 6, sy + 1, 4, 2, C_SHOOT);
-                box(ex + 4, sy + 3, 8, 3, C_SHOOT);
-                box(ex + 2, sy + 6, 12, 4, C_SHOOT);
+            case PANDA_ENTITY_SHOOT:  // 竹笋（大三角塔+节纹）
+                box(ex + 8, sy, 8, 4, C_SHOOT);
+                box(ex + 5, sy + 4, 14, 5, C_SHOOT);
+                box(ex + 2, sy + 9, 20, 6, C_SHOOT);
+                box(ex + 5, sy + 6, 2, 2, C_BAMBOO_D);
+                box(ex + 17, sy + 6, 2, 2, C_BAMBOO_D);
                 break;
-            case PANDA_ENTITY_STAR:   // 星星：十字闪烁
-                box(ex + 6, sy, 4, 12, C_STAR);
-                box(ex, sy + 4, 16, 4, C_STAR);
-                box(ex + 5, sy + 5, 6, 2, C_PANDA_W);
+            case PANDA_ENTITY_STAR:   // 星星（大十字+中心亮点）
+                box(ex + 9, sy, 6, 24, C_STAR);
+                box(ex, sy + 9, 24, 6, C_STAR);
+                box(ex + 9, sy + 9, 6, 6, C_PANDA_W);
                 break;
             default: break;
         }
     }
 
     // 熊猫（黑白像素块：耳/头/眼斑/身），切杆动画横向插值
-    int from_x = 40 + s_game.from_lane * 80;
-    int to_x = 40 + s_game.lane * 80;
+    int from_x = 40 + panda_slot_lane(s_game.from_lane) * 80 + panda_slot_side(s_game.from_lane) * 12;
+    int to_x = 40 + panda_slot_lane(s_game.lane) * 80 + panda_slot_side(s_game.lane) * 12;
     int px = to_x;
     if (s_game.switch_anim) {
         int t = PANDA_SWITCH_FRAMES - s_game.switch_anim;
@@ -105,9 +118,11 @@ void draw_game(lv_event_t *e) {
     box(px - 4, py - 10, 2, 2, C_PANDA_W);        // 眼白点
     box(px + 2, py - 10, 2, 2, C_PANDA_W);
     box(px - 1, py - 7, 2, 2, C_PANDA_B);         // 鼻
-    // 抱杆手
-    box(px - 11, py + 2, 3, 6, C_PANDA_B);
-    box(px + 8, py + 2, 3, 6, C_PANDA_B);
+    // 抱杆手: 伸向竿所在的那一侧
+    {
+        int toward = panda_slot_side(s_game.lane);
+        box(toward < 0 ? px - 13 : px + 10, py + 2, 3, 6, C_PANDA_B);
+    }
     // 无敌闪烁：熊猫外圈星尘
     if (s_game.invincible_ms && (++s_invincible_blink & 2)) {
         box(px - 12, py - 18, 2, 2, C_STAR);
@@ -122,7 +137,7 @@ void refresh_texts() {
     if (s_game.state == PANDA_STATE_IDLE) {
         lv_label_set_text(s_status, "熊猫爬竹竿");
         lv_obj_set_style_text_color(s_status, lv_color_hex(UI_ACCENT), 0);
-        std::snprintf(buf, sizeof(buf), "上=左移  下=右移  确定=开始");
+        std::snprintf(buf, sizeof(buf), "上=向左 下=向右 确定=开始");
         lv_label_set_text(s_hint, buf);
     } else if (s_game.state == PANDA_STATE_OVER) {
         std::snprintf(buf, sizeof(buf), "爬到 %lu 米  最佳 %lu 米",
@@ -136,7 +151,7 @@ void refresh_texts() {
                       s_game.invincible_ms ? "  ★无敌" : "");
         lv_label_set_text(s_status, buf);
         lv_obj_set_style_text_color(s_status, lv_color_hex(UI_TEXT), 0);
-        lv_label_set_text(s_hint, "上=左杆 下=右杆 · 长按确定返回");
+        lv_label_set_text(s_hint, "上=向左 下=向右 · 长按确定返回");
     }
 }
 

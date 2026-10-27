@@ -207,6 +207,19 @@ void draw_app_icon(passport_app_id_t id, uint32_t color) {
             set_part(4, 41, 34, 6, 20, color);
             set_part(5, 47, 48, 14, 6, color);
             break;
+        case APP_ID_PANDA:
+            // 熊猫爬竹竿: 三竿竹节 + 熊猫头(耳/眼斑) 攀在竿上
+            set_part(0, 14, 12, 6, 62, detail);    // 左竿
+            set_part(1, 14, 20, 6, 4, color);      // 左竿竹节
+            set_part(2, 41, 8, 6, 66, color);      // 中竿(主)
+            set_part(3, 41, 18, 6, 4, detail);     // 中竿竹节
+            set_part(4, 68, 14, 6, 60, detail);    // 右竿
+            set_part(5, 68, 24, 6, 4, color);      // 右竿竹节
+            set_part(6, 32, 26, 24, 18, color);    // 熊猫头(贴中竿)
+            set_part(7, 34, 22, 7, 5, color);      // 左耳
+            set_part(8, 47, 22, 7, 5, color);      // 右耳
+            set_part(9, 37, 31, 16, 6, UI_BG);     // 眼斑带(背景色挖出)
+            break;
         case APP_ID_POMODORO:
             // Stepped tomato outline and clock hands use the same 4px strokes.
             // Carve the two overlapping body blocks with the current page color.
