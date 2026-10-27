@@ -23,9 +23,10 @@ typedef enum {
 
 typedef enum {
     PANDA_ENTITY_NONE = 0,
-    PANDA_ENTITY_SNAKE,     // 蛇：碰到结束
-    PANDA_ENTITY_BUG,       // 甲虫：碰到结束
-    PANDA_ENTITY_SHOOT,     // 竹笋：+5 分
+    PANDA_ENTITY_SNAKE,     // 蛇：撞扣一命
+    PANDA_ENTITY_BUG,       // 甲虫：撞扣一命
+    PANDA_ENTITY_BEE,       // 蜜蜂：左右摆动的移动障碍
+    PANDA_ENTITY_SHOOT,     // 竹笋：+5×连击 分
     PANDA_ENTITY_STAR,      // 星星：无敌 3 秒
 } panda_entity_kind_t;
 
@@ -43,9 +44,13 @@ typedef struct {
     int16_t from_lane;      // 切杆起点（动画插值用）
     uint32_t height_m;      // 当前高度（分）
     uint32_t best_m;        // 本次开机最佳
-    uint16_t scroll_y;      // 世界滚动偏移（熊猫固定在屏幕 2/3 高度处）
-    uint16_t speed;         // 爬升速度（px/s），随高度增加
-    uint16_t invincible_ms; // 无敌剩余时间
+    uint16_t scroll_y;      // 世界滚动偏移
+    uint16_t speed;         // 爬升速度（px/s），无限递增（曲线放缓）
+    uint16_t invincible_ms; // 无敌剩余时间（受伤闪烁共用）
+    uint8_t lives;          // 剩余命数（3 起）
+    uint16_t hurt_ms;       // 受伤后的闪烁保护时长
+    uint8_t combo;          // 连击数（连续吃道具，撞障碍清零）
+    uint32_t combo_score;   // 连击累计加分（供 UI 展示 ×N）
     uint32_t tick_ms;       // 累计游戏时间
     panda_entity_t entities[PANDA_MAX_ENTITIES];
     uint16_t entity_count;
@@ -55,7 +60,7 @@ typedef struct {
 
 void panda_init(panda_game_t *g);
 void panda_start(panda_game_t *g);
-// 推进一帧；dt_ms 为距上次调用的毫秒数。返回 false 表示游戏结束。
+// 推进一帧；dt_ms 为距上次调用的毫秒数。撞障碍扣命(3命用尽→OVER)，受伤后 1.5s 闪烁保护。
 void panda_tick(panda_game_t *g, uint32_t dt_ms);
 // UP=左移一槽 DOWN=右移一槽（0..5 间夹紧，同竿两面→邻竿）；游戏中才生效
 void panda_move(panda_game_t *g, int dir);
