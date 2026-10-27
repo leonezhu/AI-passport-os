@@ -18,8 +18,8 @@ lv_obj_t *s_canvas;      // 全屏像素游戏画布（draw 事件渲染，文�
 uint32_t s_last_us;
 uint32_t s_blink;        // 通用闪烁计数
 // 与 panda_core.c 保持一致的世界↔屏幕换算（渲染用）
-constexpr int kRenderTop = 216;
-constexpr int kPandaScreenY = 158;
+constexpr int kRenderTop = 296;
+constexpr int kPandaScreenY = 240;
 
 // 像素配色（竹绿+熊猫黑白+障碍暖色，与 OS 调色板同族）
 constexpr uint32_t C_BG = 0xEFEAD8;       // 画布底（米色，全屏）
@@ -82,21 +82,21 @@ void draw_game(lv_event_t *e) {
     const bool flash_hurt = s_game.hurt_ms && (++s_blink & 2);
 
     // 背景
-    box(0, 0, 240, 240, C_BG);
+    box(0, 0, 240, 320, C_BG);
 
     // 三根竹竿：通顶全高（竹节每 24px，随滚动移动）
     for (int l = 0; l < PANDA_LANES; ++l) {
         int bx = 40 + l * 80 - 4;
-        box(bx, 0, 8, 240, C_BAMBOO);
+        box(bx, 0, 8, 320, C_BAMBOO);
         int phase = (int)((s_game.scroll_y) % 24);
-        for (int y = -phase; y < 240; y += 24) box(bx, y, 8, 3, C_BAMBOO_D);
+        for (int y = -phase; y < 320; y += 24) box(bx, y, 8, 3, C_BAMBOO_D);
     }
 
     // 实体：6 槽位贴面；sy 与碰撞公式严格同源（PANDA_RENDER_TOP）
     for (uint16_t i = 0; i < s_game.entity_count; ++i) {
         const panda_entity_t *en = &s_game.entities[i];
         int sy = kRenderTop - (en->y - (int)s_game.scroll_y) - 12;
-        if (sy < -12 || sy > 240) continue;
+        if (sy < -12 || sy > 320) continue;
         uint8_t st_lane = panda_slot_lane(en->lane);
         int8_t side = panda_slot_side(en->lane);
         int pole_x = 40 + st_lane * 80;
@@ -203,7 +203,7 @@ void draw_game(lv_event_t *e) {
     if (s_game.state == PANDA_STATE_RUNNING && s_game.combo >= 2) {
         char cbuf[12];
         std::snprintf(cbuf, sizeof(cbuf), "X%lu", (unsigned long)(s_game.combo > 4 ? 4 : s_game.combo));
-        text4x(8, 224, cbuf, C_STAR);
+        text4x(8, 300, cbuf, C_STAR);
     }
     // 受伤红闪边框
     if (flash_hurt) {
@@ -214,22 +214,22 @@ void draw_game(lv_event_t *e) {
     }
     // IDLE / OVER 全屏大字
     if (s_game.state == PANDA_STATE_IDLE) {
-        box(30, 92, 180, 44, C_PANDA_W);
-        box(32, 94, 176, 40, C_PANDA_B);
-        text4x(52, 100, "PANDA", C_STAR);
-        text4x(52, 114, "CLIMB", C_PANDA_W);
+        box(30, 128, 180, 44, C_PANDA_W);
+        box(32, 130, 176, 40, C_PANDA_B);
+        text4x(52, 136, "PANDA", C_STAR);
+        text4x(52, 150, "CLIMB", C_PANDA_W);
         // 按确定开始
         char ibuf[24];
         (void)ibuf;
     } else if (s_game.state == PANDA_STATE_OVER) {
-        box(24, 86, 192, 56, C_PANDA_W);
-        box(26, 88, 188, 52, C_BUG);
-        text4x(52, 94, "GAME", C_PANDA_W);
-        text4x(52, 108, "OVER", C_PANDA_W);
+        box(24, 122, 192, 56, C_PANDA_W);
+        box(26, 124, 188, 52, C_BUG);
+        text4x(52, 130, "GAME", C_PANDA_W);
+        text4x(52, 144, "OVER", C_PANDA_W);
         char sbuf[20];
         std::snprintf(sbuf, sizeof(sbuf), "%luM BEST%luM",
                       (unsigned long)s_game.height_m, (unsigned long)s_game.best_m);
-        text4x(40, 126, sbuf, C_PANDA_W);
+        text4x(40, 162, sbuf, C_PANDA_W);
     }
 }
 
@@ -262,7 +262,7 @@ void start() {
     s_canvas = lv_obj_create(s_screen);
     lv_obj_remove_style_all(s_canvas);
     lv_obj_set_pos(s_canvas, 0, 0);
-    lv_obj_set_size(s_canvas, 240, 240);   // 全屏游戏区
+    lv_obj_set_size(s_canvas, 240, 320);   // 全屏游戏区(240x320 竖屏)
     lv_obj_add_event_cb(s_canvas, draw_game, LV_EVENT_DRAW_MAIN, nullptr);
     lv_screen_load(s_screen);
     s_timer = lv_timer_create(tick, 16, nullptr);

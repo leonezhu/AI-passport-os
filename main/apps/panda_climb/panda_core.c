@@ -3,19 +3,19 @@
 #include <string.h>
 
 // ---- 参数区（全部可调） ----
-#define PANDA_BASE_SPEED 38      // 初始爬升 px/s
+#define PANDA_BASE_SPEED 44      // 初始爬升 px/s
 #define PANDA_SPEED_NUM 1        // 速度无限递增：每 PANDA_SPEED_DEN ms +1 px/s
-#define PANDA_SPEED_DEN 2000     // → 每秒 +0.5px/s，两分钟 ~98px/s，持续施压不封顶
+#define PANDA_SPEED_DEN 1200     // → 每秒 +0.83px/s，递增更快且不封顶
 #define PANDA_INVINCIBLE_MS 3000 // 星星无敌
 #define PANDA_HURT_MS 1500       // 受伤闪烁保护（防连续判定）
-#define PANDA_SPAWN_GAP_MIN 110
-#define PANDA_SPAWN_GAP_MAX 240
+#define PANDA_SPAWN_GAP_MIN 80
+#define PANDA_SPAWN_GAP_MAX 190
 #define PANDA_ENTITY_H 24
 // 世界↔屏幕换算（所见即所得的关键）：
 // 渲染: entity_sy = PANDA_RENDER_TOP - (e->y - scroll_y)，熊猫画在 PANDA_SCREEN_Y
 // → 熊猫对应的世界 y = scroll_y + (PANDA_RENDER_TOP - PANDA_SCREEN_Y)
-#define PANDA_SCREEN_Y 158
-#define PANDA_RENDER_TOP 216
+#define PANDA_SCREEN_Y 240   // 320 高竖屏：熊猫在下 1/3
+#define PANDA_RENDER_TOP 296
 
 static uint32_t next_rand(panda_game_t *g) {
     g->rng = g->rng * 1664525u + 1013904223u;
@@ -65,8 +65,8 @@ static void spawn_entities(panda_game_t *g) {
     while (g->next_spawn_y < (int16_t)(g->scroll_y + 340)) {
         uint32_t roll = next_rand(g) % 10;
         uint8_t kind;
-        if (roll < 5) kind = (next_rand(g) & 1) ? PANDA_ENTITY_SNAKE : PANDA_ENTITY_BUG;
-        else if (roll < 7) kind = PANDA_ENTITY_BEE;              // 20% 移动障碍
+        if (roll < 4) kind = (next_rand(g) & 1) ? PANDA_ENTITY_SNAKE : PANDA_ENTITY_BUG;
+        else if (roll < 7) kind = PANDA_ENTITY_BEE;              // 30% 移动障碍
         else if (roll < 9) kind = PANDA_ENTITY_SHOOT;
         else kind = PANDA_ENTITY_STAR;
         if (g->entity_count < PANDA_MAX_ENTITIES) {

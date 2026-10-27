@@ -45,8 +45,8 @@ namespace {
 // app_registry_get_by_id() 单独寻址,这样 switch_to(APP_ID_HOME) 才不会找不到而黑屏。
 // AI设备(AI设备/Codex 陪伴精灵)已于 2026-09-12 移除,见 docs/app-review-2026-09-12.md。
 const passport_app_t *s_apps[] = {
-    &g_radio_app,
     &g_voice_app,
+    &g_radio_app,
     &g_xiaozhi_app,
     &g_stopwatch_app,
     &g_pomodoro_app,
